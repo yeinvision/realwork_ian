@@ -65,6 +65,12 @@ button,a,input,select,label{touch-action:manipulation;-webkit-tap-highlight-colo
 .nav a:hover{background:rgba(0,204,170,.08)}
 .nav a.on{background:var(--accent);color:var(--on-accent)}
 .nav a.on svg{opacity:1}
+.studypane{grid-column:2;grid-row:1;display:flex;flex-direction:column;height:100vh;position:sticky;top:0;min-width:0}
+.studypane[hidden]{display:none}
+.studybar{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);font-size:13px;color:var(--muted)}
+.studybar b{color:var(--ink);font-size:14px;margin-right:auto}
+.studybar a.btn{text-decoration:none;color:inherit}
+.studypane iframe{flex:1;width:100%;border:0;background:var(--bg,transparent)}
 .side .foot{margin-top:auto;font-size:12px;color:var(--muted);padding:0 8px;display:flex;flex-direction:column;gap:6px}
 .sync{display:inline-flex;align-items:center;gap:6px}
 .sync i{width:7px;height:7px;border-radius:50%;background:var(--accent);display:inline-block}
@@ -389,6 +395,8 @@ table.t input:hover,table.t select:hover{border-color:var(--line)}
   .nav a{flex-direction:column;gap:2px;font-size:10.5px;padding:6px 4px;flex:1;text-align:center}
   .nav a svg{width:21px;height:21px}
   .main{padding:18px 14px 96px}
+  .studypane{grid-column:1;height:calc(100vh - 66px - env(safe-area-inset-bottom));height:calc(100dvh - 66px - env(safe-area-inset-bottom))}
+  .studybar{padding:10px 12px}
   h1.page{font-size:23px}
   .cell{min-height:72px;padding:4px 3px}
   .echip{font-size:10px;padding:1px 4px}
@@ -460,6 +468,7 @@ table.t input:hover,table.t select:hover{border-color:var(--line)}
     <div class="foot"><span class="sync" id="sync"><i></i><span>연결 중…</span></span><span id="clock" class="num"></span></div>
   </aside>
   <main class="main" id="main"><div class="loading">불러오는 중…</div></main>
+  <section class="studypane" id="studyPane" hidden></section>
 </div>
 <div id="modalRoot"></div>
 <div id="toastRoot"></div>
@@ -867,6 +876,7 @@ const ROUTES = [
   ['review','회고','<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4z"/>'],
   ['growth','성장','<path d="M12 21v-9"/><path d="M12 12c0-4 3-7 8-7 0 5-3 7-8 7z"/><path d="M12 15c0-3-2.5-5.5-7-5.5 0 4 2.5 5.5 7 5.5z"/>'],
   ['attendance','출퇴근','<circle cx="12" cy="13" r="8"/><path d="M12 9v4l2.5 2.5M9 2h6"/>'],
+  ['study','학습노트','<path d="M2 4h6a4 4 0 0 1 4 4v13a3 3 0 0 0-3-3H2z"/><path d="M22 4h-6a4 4 0 0 0-4 4v13a3 3 0 0 1 3-3h7z"/>'],
   ['prefs','설정','<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1.1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1.1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3H9a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8V9a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/>']
 ];
 const state = {
@@ -888,6 +898,7 @@ function render(){
   state.route = currentRoute();
   { const t = curTheme(); if((document.documentElement.dataset.theme === 'light') !== (t === 'light')) applyTheme(t); }
   renderNav();
+  if(showStudy(state.route === 'study')){ lastRoute = state.route; state.pendingRender = false; return; }
   const y = window.scrollY, same = lastRoute === state.route;
   const views = { today:viewToday, calendar:viewCalendar, todos:viewTodos, meetings:viewMeetings, review:viewReview, growth:viewGrowth, attendance:viewAttendance, prefs:viewPrefs };
   document.getElementById('main').innerHTML = topbar() + (state.banner ? `<div class="banner">${esc(state.banner)}</div>` : '') + views[state.route]();
@@ -896,6 +907,16 @@ function render(){
   lastRoute = state.route;
   state.pendingRender = false;
   const sy = document.getElementById('sync'), m = document.getElementById('msync'); if(sy && m){ m.className = sy.className + ' msync'; m.lastElementChild.textContent = sy.lastElementChild.textContent; }
+}
+/* 리얼워커 학습노트: 따로 배포된 앱을 iframe으로 띄워요. 한 번 열면 다른 메뉴를 다녀와도 다시 불러오지 않아요. */
+const STUDY_URL = 'https://realworker-study.vercel.app/';
+function showStudy(on){
+  const pane = document.getElementById('studyPane'), main = document.getElementById('main');
+  pane.hidden = !on; main.hidden = on;
+  if(on && !pane.firstChild){
+    pane.innerHTML = `<div class="studybar"><b>리얼워커 학습노트</b><button class="btn sm" data-act="study-reload">새로고침</button><a class="btn sm" href="${STUDY_URL}" target="_blank" rel="noopener">새 탭에서 열기 ↗</a></div><iframe src="${STUDY_URL}" title="리얼워커 학습노트" allow="clipboard-write"></iframe>`;
+  }
+  return on;
 }
 function isEditing(){ const a = document.activeElement; return a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && (a.closest('#main') || a.closest('#modalRoot')); }
 function softRender(){ if(isEditing() || document.querySelector('.modal-bg') || document.querySelector('.wheel-bg')) state.pendingRender = true; else render(); }
@@ -918,7 +939,7 @@ const bind = (doc, path) => `data-bind="${esc(doc)}|${esc(path)}"`;
 /* ----- LOGIN (Supabase) ----- */
 const loginState = { email:'', sent:false, busy:false, msg:'', tab:'pw' };
 function renderLogin(){
-  document.body.classList.add('login');
+  document.body.classList.add('login'); showStudy(false);
   document.getElementById('nav').innerHTML = '';
   const L = loginState;
   const tabs = `<div class="seg" style="margin-bottom:16px;width:100%"><button data-act="login-tab" data-t="pw" class="${L.tab === 'pw' ? 'on' : ''}" style="flex:1">비밀번호로 로그인</button><button data-act="login-tab" data-t="link" class="${L.tab === 'link' ? 'on' : ''}" style="flex:1">메일 링크로 로그인</button></div>`;
@@ -1589,6 +1610,7 @@ const actions = {
     el.disabled = false; el.textContent = '비밀번호 저장'; },
   'login-back': () => { loginState.sent = false; loginState.msg = ''; renderLogin(); },
   'login-resend': () => sendLoginLink(),
+  'study-reload': () => { const f = document.querySelector('#studyPane iframe'); if(f) f.src = STUDY_URL; },
   'logout': async el => { if(!el.dataset.sure){ el.dataset.sure = '1'; el.textContent = '한 번 더 누르면 로그아웃'; return; }
     Object.keys(Store.timers).forEach(k => clearTimeout(Store.timers[k])); Store.docs = {}; Store.unsynced = {}; Store.dirty = {}; Store.mode = 'loading';
     try{ localStorage.removeItem(LS_KEY); localStorage.removeItem(LS_KEY + '-pending'); }catch(e){}
