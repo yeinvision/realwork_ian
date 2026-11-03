@@ -65,6 +65,10 @@ button,a,input,select,label{touch-action:manipulation;-webkit-tap-highlight-colo
 .nav a:hover{background:rgba(0,204,170,.08)}
 .nav a.on{background:var(--accent);color:var(--on-accent)}
 .nav a.on svg{opacity:1}
+.mshare{border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin:14px 0 4px;background:rgba(0,204,170,.05)}
+.mshare-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin-bottom:8px}
+.mshare-h .hint{font-size:12px}
+.mshare a.btn{text-decoration:none;color:inherit}
 .studypane{grid-column:2;grid-row:1;display:flex;flex-direction:column;height:100vh;position:sticky;top:0;min-width:0}
 .studypane[hidden]{display:none}
 .studybar{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);font-size:13px;color:var(--muted)}
@@ -1287,7 +1291,7 @@ function viewMeetings(){
     const acts = actionState(m), ad = acts.filter(a => a.done).length;
     items += `<div class="mitem ${sel === m._key ? 'on' : ''}" data-act="mtg-open" data-id="${esc(m._key)}">
       <div class="mt">${esc(m.title || '(제목 없는 회의)')}</div>
-      <div class="meta"><span class="num">${m.date ? shortLabel(m.date) : ''}${m.time ? ' ' + esc(m.time) : ''}</span>${m.type ? `<span class="tag">${esc(m.type)}</span>` : ''}${acts.length ? `<span class="${ad === acts.length ? 'okc' : ''}">액션 ${ad}/${acts.length}</span>` : ''}</div>
+      <div class="meta"><span class="num">${m.date ? shortLabel(m.date) : ''}${m.time ? ' ' + esc(m.time) : ''}</span>${m.type ? `<span class="tag">${esc(m.type)}</span>` : ''}${acts.length ? `<span class="${ad === acts.length ? 'okc' : ''}">액션 ${ad}/${acts.length}</span>` : ''}${m.shareUrl ? '<span class="okc">🔗 정리본</span>' : ''}</div>
       ${m.decisions ? `<div class="mprev">✔ ${esc(m.decisions.split('\n')[0].slice(0,60))}</div>` : ''}</div>`;
   });
   const listCol = `<section class="card mlist">
@@ -1311,6 +1315,14 @@ function meetingEditor(key){
       <div><label class="f">분류</label><select ${bind(key,'type')}>${MTG_TYPES.map(t => `<option ${m.type === t ? 'selected' : ''}>${t}</option>`).join('')}</select></div>
     </div>
     <label class="f">참석자</label><input type="text" ${bind(key,'attendees')} value="${esc(m.attendees || '')}" placeholder="예) 김대표, 박코치, 이안" autocomplete="off" data-rerender="1">
+    <div class="mshare">
+      <div class="mshare-h"><b>회의록 정리하기</b><span class="hint">메모와 녹음 스크립트를 Claude에게 보내 공유용 회의록으로 정리해요</span></div>
+      <div class="row" style="gap:8px;flex-wrap:wrap"><button class="btn sm pri" data-act="mtg-claude" data-id="${esc(key)}">✨ Claude로 정리하기</button>
+        <span class="hint" style="font-size:12px">요청문이 복사되고 새 대화가 열려요. 붙여넣은 뒤 녹음 스크립트·메모 파일을 첨부하세요.</span></div>
+      <label class="f">정리본 링크</label>
+      <div class="row" style="gap:6px"><input type="url" ${bind(key,'shareUrl')} value="${esc(m.shareUrl || '')}" placeholder="Claude가 만든 회의록의 공유 링크를 붙여넣으세요" autocomplete="off" data-rerender="1" style="flex:1;min-width:0">
+        ${m.shareUrl ? `<button class="btn sm" data-act="mtg-link-copy" data-id="${esc(key)}">링크 복사</button><a class="btn sm" href="${esc(m.shareUrl)}" target="_blank" rel="noopener">열기 ↗</a>` : ''}</div>
+    </div>
     ${ta('agenda','안건','1. \n2. ')}
     ${ta('notes','논의 내용','누가 어떤 의견을 냈는지, 핵심 내용 위주로', true)}
     ${ta('decisions','결정 사항','합의된 것, 확정된 것')}
@@ -1335,10 +1347,21 @@ function meetingText(m){
   L.push(`[회의록] ${m.title || '(제목 없음)'}`);
   L.push(`일시: ${m.date ? dayLabel(m.date) : ''}${m.time ? ' ' + m.time : ''}${m.type ? ' · ' + m.type : ''}`);
   if(m.attendees) L.push(`참석자: ${m.attendees}`);
+  if(m.shareUrl) L.push(`정리본: ${m.shareUrl}`);
   const sec = (t, v) => { if((v||'').trim()) { L.push(''); L.push(`■ ${t}`); L.push(v.trim()); } };
   sec('안건', m.agenda); sec('논의 내용', m.notes); sec('결정 사항', m.decisions);
   if(acts.length){ L.push(''); L.push('■ 액션 아이템'); acts.forEach(a => L.push(`${a.done ? '[x]' : '[ ]'} ${a.text}${a.owner ? ' / ' + a.owner : ''}${a.due ? ' / ~' + shortLabel(a.due) : ''}`)); }
   sec('기타 메모', m.memo);
+  return L.join('\n');
+}
+const CLAUDE_NEW = 'https://claude.ai/new';
+function meetingRequest(m){
+  const L = ['/meeting-minutes', '', '아래 회의를 내 회의록 정리 형식으로 정리하고, 공유할 수 있는 페이지로 만들어줘.', '녹음 스크립트와 메모 파일은 첨부할게.', ''];
+  L.push(`회의명: ${m.title || '(미정)'}`);
+  L.push(`일시: ${m.date ? dayLabel(m.date) : ''}${m.time ? ' ' + m.time : ''}${m.type ? ' · ' + m.type : ''}`);
+  if(m.attendees) L.push(`참석: ${m.attendees}`);
+  const body = meetingText(m).split('\n').slice(m.attendees ? 3 : 2).join('\n').trim();
+  if(body){ L.push(''); L.push('--- 내가 적은 메모 ---'); L.push(body); }
   return L.join('\n');
 }
 function meetingsOn(date){ return meetings().filter(m => m.date === date); }
@@ -1581,6 +1604,14 @@ const actions = {
     if(!el.dataset.sure){ el.dataset.sure = '1'; el.textContent = '한 번 더 누르면 삭제'; return; }
     const before = clone(Store.get(key)); Store.remove(key); state.mtgId = null; render();
     toast('회의록을 삭제했어요', () => { Store.mutate(key, d => Object.assign(d, before)); state.mtgId = key; render(); toast('회의록을 되돌렸어요'); }); },
+  'mtg-claude': async el => { const m = Store.get(el.dataset.id); if(!m) return; const txt = meetingRequest(m);
+    const w = window.open(CLAUDE_NEW, '_blank', 'noopener');
+    try{ await navigator.clipboard.writeText(txt); toast('요청문을 복사했어요. 새 대화에 붙여넣고 파일을 첨부하세요.'); }
+    catch(e){ openModal(`<h3>Claude에게 보낼 요청문</h3><div class="hint" style="margin-bottom:8px">아래 내용을 모두 선택해 복사한 뒤 <a href="${CLAUDE_NEW}" target="_blank" rel="noopener">새 대화</a>에 붙여넣으세요.</div><textarea readonly style="min-height:260px;font-size:13px">${esc(txt)}</textarea><div class="actions"><button class="btn pri" data-act="modal-close">닫기</button></div>`); }
+    if(!w) toast('새 창이 막혔어요. claude.ai에서 새 대화를 열고 붙여넣으세요.'); },
+  'mtg-link-copy': async el => { const m = Store.get(el.dataset.id); if(!m || !m.shareUrl) return;
+    try{ await navigator.clipboard.writeText(m.shareUrl); toast('정리본 링크를 복사했어요.'); }
+    catch(e){ openModal(`<h3>정리본 링크</h3><input type="text" readonly value="${esc(m.shareUrl)}" onfocus="this.select()"><div class="actions"><button class="btn pri" data-act="modal-close">닫기</button></div>`); } },
   'mtg-copy': async el => { const m = Store.get(el.dataset.id); if(!m) return; const txt = meetingText(m);
     try{ await navigator.clipboard.writeText(txt); toast('회의록을 복사했어요. 메신저나 메일에 붙여넣으세요.'); }
     catch(e){ openModal(`<h3>회의록 텍스트</h3><div class="hint" style="margin-bottom:8px">아래 내용을 길게 눌러 모두 선택한 뒤 복사하세요.</div><textarea readonly style="min-height:260px;font-size:13px">${esc(txt)}</textarea><div class="actions"><button class="btn pri" data-act="modal-close">닫기</button></div>`); const ta = document.querySelector('#modalRoot textarea'); ta.focus(); ta.select(); } },
