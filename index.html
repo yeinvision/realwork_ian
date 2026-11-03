@@ -259,8 +259,8 @@ body.login .main{max-width:none}
 .loginwrap{min-height:80vh;display:grid;place-items:center;padding:20px 0}
 .logincard{width:100%;max-width:400px;padding:28px 24px}
 .loginlogo{width:120px;height:auto;display:block;margin-bottom:12px}
-input[type=email]{border:1px solid var(--line);background:var(--input);border-radius:9px;padding:10px 11px;font-size:15px;outline:none;width:100%}
-input[type=email]:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,204,170,.18)}
+input[type=email],input[type=password]{border:1px solid var(--line);background:var(--input);border-radius:9px;padding:10px 11px;font-size:15px;outline:none;width:100%}
+input[type=email]:focus,input[type=password]:focus{border-color:var(--accent);box-shadow:0 0 0 3px rgba(0,204,170,.18)}
 .linkish{background:none;border:0;padding:0;color:var(--accent);font-size:13px;font-weight:500;text-decoration:underline;text-underline-offset:3px}
 
 /* events */
@@ -916,29 +916,43 @@ const card = (title, body, right='') => `<section class="card"><div class="cardh
 const bind = (doc, path) => `data-bind="${esc(doc)}|${esc(path)}"`;
 
 /* ----- LOGIN (Supabase) ----- */
-const loginState = { email:'', sent:false, busy:false, msg:'' };
+const loginState = { email:'', sent:false, busy:false, msg:'', tab:'pw' };
 function renderLogin(){
   document.body.classList.add('login');
   document.getElementById('nav').innerHTML = '';
   const L = loginState;
-  document.getElementById('main').innerHTML = `<div class="loginwrap"><section class="card logincard">
-    <img src="${LOGO}" alt="REALWORK" class="loginlogo">
-    <h1 class="page" style="font-size:22px;margin:6px 0 4px">이안의 일잘러 노트</h1>
-    <div class="hint" style="margin-bottom:18px">${L.sent ? `<b>${esc(L.email)}</b>로 로그인 링크를 보냈어요.<br>메일함에서 링크를 누르면 바로 들어와요.` : '이메일로 받은 링크를 누르면 로그인돼요. 비밀번호는 필요 없어요.'}</div>
-    ${L.sent ? `
+  const tabs = `<div class="seg" style="margin-bottom:16px;width:100%"><button data-act="login-tab" data-t="pw" class="${L.tab === 'pw' ? 'on' : ''}" style="flex:1">비밀번호로 로그인</button><button data-act="login-tab" data-t="link" class="${L.tab === 'link' ? 'on' : ''}" style="flex:1">메일 링크로 로그인</button></div>`;
+  let body;
+  if(L.tab === 'pw'){
+    body = `<form data-form="login-pw"><label class="f">이메일</label><input type="email" name="e" value="${esc(L.email)}" placeholder="you@example.com" autocomplete="username" required>
+      <label class="f">비밀번호</label><input type="password" name="p" placeholder="비밀번호" autocomplete="current-password" required>
+      <button class="btn pri" style="width:100%;justify-content:center;margin-top:14px;min-height:44px" ${L.busy ? 'disabled' : ''}>${L.busy ? '확인 중…' : '로그인'}</button></form>
+      <div class="hint" style="margin-top:12px;font-size:12.5px">비밀번호는 처음 한 번 메일 링크로 로그인한 뒤 <b>설정 → 계정</b>에서 만들 수 있어요.</div>`;
+  } else if(L.sent){
+    body = `<div class="hint" style="margin-bottom:12px"><b>${esc(L.email)}</b>로 로그인 링크를 보냈어요.<br>메일함(스팸함 포함)에서 링크를 누르면 바로 들어와요.</div>
       <form data-form="login-code"><label class="f">메일에 6자리 코드가 있다면 입력</label>
         <div class="row"><input type="text" name="c" inputmode="numeric" autocomplete="one-time-code" maxlength="10" placeholder="123456"><button class="btn pri" ${L.busy ? 'disabled' : ''}>확인</button></div></form>
-      <div class="row" style="margin-top:14px;justify-content:space-between"><button class="btn ghost sm" data-act="login-back">다른 이메일</button><button class="btn sm" data-act="login-resend" ${L.busy ? 'disabled' : ''}>링크 다시 보내기</button></div>`
-    : `<form data-form="login-email"><label class="f">이메일</label><input type="email" name="e" value="${esc(L.email)}" placeholder="you@example.com" autocomplete="email" required>
-        <button class="btn pri" style="width:100%;justify-content:center;margin-top:12px;min-height:44px" ${L.busy ? 'disabled' : ''}>${L.busy ? '보내는 중…' : '로그인 링크 받기'}</button></form>`}
+      <div class="row" style="margin-top:14px;justify-content:space-between"><button class="btn ghost sm" data-act="login-back">다른 이메일</button><button class="btn sm" data-act="login-resend" ${L.busy ? 'disabled' : ''}>링크 다시 보내기</button></div>`;
+  } else {
+    body = `<form data-form="login-email"><label class="f">이메일</label><input type="email" name="e" value="${esc(L.email)}" placeholder="you@example.com" autocomplete="email" required>
+        <button class="btn pri" style="width:100%;justify-content:center;margin-top:12px;min-height:44px" ${L.busy ? 'disabled' : ''}>${L.busy ? '보내는 중…' : '로그인 링크 받기'}</button></form>
+      <div class="hint" style="margin-top:12px;font-size:12.5px">무료 메일은 1시간에 2통까지만 보낼 수 있어요. 자주 쓰려면 비밀번호를 설정해 두세요.</div>`;
+  }
+  document.getElementById('main').innerHTML = `<div class="loginwrap"><section class="card logincard">
+    <img src="${LOGO}" alt="REALWORK" class="loginlogo">
+    <h1 class="page" style="font-size:22px;margin:6px 0 16px">이안의 일잘러 노트</h1>
+    ${tabs}${body}
     ${L.msg ? `<div class="hint" style="margin-top:12px;color:var(--red)">${esc(L.msg)}</div>` : ''}
   </section></div>`;
 }
 async function sendLoginLink(){
   const L = loginState; L.busy = true; L.msg = ''; renderLogin();
-  try{ const sb = await getSupabase(); const { error } = await sb.auth.signInWithOtp({ email:L.email, options:{ emailRedirectTo: location.origin + location.pathname } });
+  try{ const sb = await getSupabase(); const { error } = await sb.auth.signInWithOtp({ email:L.email, options:{ emailRedirectTo: location.origin + location.pathname, shouldCreateUser:false } });
     if(error) throw error; L.sent = true; }
-  catch(e){ L.msg = /rate|seconds/i.test(e && e.message || '') ? '잠시 후 다시 시도해 주세요. (메일은 짧은 시간에 여러 번 보낼 수 없어요)' : '로그인 링크를 보내지 못했어요: ' + ((e && e.message) || ''); }
+  catch(e){ const m = (e && e.message) || '';
+    L.msg = /rate|seconds|limit/i.test(m) ? '메일 한도(1시간에 2통)에 걸렸어요. 비밀번호가 있다면 비밀번호로 로그인하고, 없다면 1시간 뒤에 다시 시도해 주세요. 앞서 받은 메일이 있다면 그 링크를 눌러도 돼요.'
+      : /not found|signups not allowed|not allowed/i.test(m) ? '등록되지 않은 이메일이에요. 처음 로그인한 이메일을 넣어 주세요.'
+      : '로그인 링크를 보내지 못했어요: ' + m; }
   L.busy = false; renderLogin();
 }
 
@@ -1460,7 +1474,12 @@ function viewPrefs(){
   const S = settings();
   return `<div class="pagehead"><h1 class="page">설정</h1></div>
   <div class="grid2"><div class="col">
-    ${SB_USER ? card('계정', `<div class="row" style="justify-content:space-between;flex-wrap:wrap"><span>${esc(SB_USER.email || '')}<br><span class="hint" style="font-size:12px">기록은 이 계정에만 저장돼요 (Supabase)</span></span><button class="btn sm" data-act="logout">로그아웃</button></div>`) : ''}
+    ${SB_USER ? card('계정', `<div class="row" style="justify-content:space-between;flex-wrap:wrap"><span>${esc(SB_USER.email || '')}<br><span class="hint" style="font-size:12px">기록은 이 계정에만 저장돼요 (Supabase)</span></span><button class="btn sm" data-act="logout">로그아웃</button></div>
+      <label class="f" style="margin-top:16px">비밀번호 설정 · 변경</label>
+      <div class="hint" style="font-size:12.5px;margin-bottom:8px">비밀번호가 있으면 메일을 기다리지 않고 바로 로그인할 수 있어요. 8자 이상.</div>
+      <input type="password" name="np" placeholder="새 비밀번호" autocomplete="new-password" style="margin-bottom:6px">
+      <input type="password" name="np2" placeholder="새 비밀번호 확인" autocomplete="new-password">
+      <button class="btn pri sm" style="margin-top:8px" data-act="pw-save">비밀번호 저장</button>`) : ''}
     ${card('화면 테마', `<div class="seg"><button data-act="theme-set" data-t="dark" class="${curTheme() !== 'light' ? 'on' : ''}">🌙 어둡게</button><button data-act="theme-set" data-t="light" class="${curTheme() === 'light' ? 'on' : ''}">☀️ 밝게</button></div><div class="hint" style="margin-top:8px">화면 맨 위의 해·달 버튼으로도 바꿀 수 있어요.</div>`)}
     ${card('기본 정보', `<label class="f">이름 (호칭)</label><input type="text" ${bind('settings','name')} value="${esc(S.name||'')}">
       <div class="row"><div style="flex:1"><label class="f">입사일</label><input type="date" ${bind('settings','startDate')} value="${esc(S.startDate||'')}" data-rerender="1"></div>
@@ -1561,6 +1580,13 @@ const actions = {
   'mact-todo': el => { const key = el.dataset.id, i = Number(el.dataset.i), m = Store.get(key), a = (m.actions || [])[i]; if(!a) return;
     const tid = uid(); mutTodos(items => items.push({ id:tid, title:a.text, due:a.due || null, priority:'mid', tag:(m.title || '회의').slice(0,20), memo:`회의록: ${m.title || ''} (${m.date ? shortLabel(m.date) : ''})${a.owner ? '\n담당: ' + a.owner : ''}`, done:false, doneAt:null, createdAt:new Date().toISOString() }));
     Store.mutate(key, mm => { mm.actions[i].todoId = tid; }); render(); toast('내 할 일에 추가했어요'); },
+  'login-tab': el => { loginState.tab = el.dataset.t; loginState.msg = ''; renderLogin(); },
+  'pw-save': async el => { const f = el.closest('.card'); const a = f.querySelector('input[name=np]').value, b = f.querySelector('input[name=np2]').value;
+    if(a.length < 8){ toast('비밀번호는 8자 이상으로 해 주세요'); return; } if(a !== b){ toast('두 비밀번호가 서로 달라요'); return; }
+    el.disabled = true; el.textContent = '저장 중…';
+    try{ const sb = await getSupabase(); const { error } = await sb.auth.updateUser({ password:a }); if(error) throw error; f.querySelector('input[name=np]').value = ''; f.querySelector('input[name=np2]').value = ''; toast('비밀번호를 저장했어요. 이제 메일 없이 로그인할 수 있어요.'); }
+    catch(e){ toast('비밀번호를 저장하지 못했어요: ' + ((e && e.message) || '')); }
+    el.disabled = false; el.textContent = '비밀번호 저장'; },
   'login-back': () => { loginState.sent = false; loginState.msg = ''; renderLogin(); },
   'login-resend': () => sendLoginLink(),
   'logout': async el => { if(!el.dataset.sure){ el.dataset.sure = '1'; el.textContent = '한 번 더 누르면 로그아웃'; return; }
@@ -1625,6 +1651,11 @@ const actions = {
 };
 
 const forms = {
+  'login-pw': async f => { const L = loginState; L.email = f.e.value.trim(); const pw = f.p.value; if(!L.email || !pw) return; L.busy = true; L.msg = ''; renderLogin();
+    try{ const sb = await getSupabase(); const { error } = await sb.auth.signInWithPassword({ email:L.email, password:pw }); if(error) throw error; location.reload(); }
+    catch(e){ const m = (e && e.message) || ''; L.busy = false;
+      L.msg = /invalid login|credentials/i.test(m) ? '이메일 또는 비밀번호가 맞지 않아요. 아직 비밀번호를 만들지 않았다면, 메일 링크로 한 번 로그인한 뒤 설정 → 계정에서 만들어 주세요.' : /rate|too many/i.test(m) ? '잠시 후 다시 시도해 주세요.' : '로그인하지 못했어요: ' + m;
+      renderLogin(); } },
   'login-email': f => { loginState.email = f.e.value.trim(); if(loginState.email) sendLoginLink(); },
   'login-code': async f => { const c = f.c.value.trim(); if(!c) return; loginState.busy = true; renderLogin();
     try{ const sb = await getSupabase(); const { error } = await sb.auth.verifyOtp({ email:loginState.email, token:c, type:'email' }); if(error) throw error; location.reload(); }
