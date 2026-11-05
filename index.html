@@ -69,6 +69,10 @@ button,a,input,select,label{touch-action:manipulation;-webkit-tap-highlight-colo
 .mshare-h{display:flex;flex-wrap:wrap;align-items:baseline;gap:8px;margin-bottom:8px}
 .mshare-h .hint{font-size:12px}
 .mshare a.btn{text-decoration:none;color:inherit}
+textarea.msum{min-height:360px;line-height:1.7}
+.mold{margin-top:14px;border:1px dashed var(--line);border-radius:12px;padding:10px 14px}
+.mold summary{cursor:pointer;font-size:13px;color:var(--muted);font-weight:600}
+.moldacts{display:flex;flex-direction:column;gap:4px;font-size:14px}
 .studypane{grid-column:2;grid-row:1;display:flex;flex-direction:column;height:100vh;position:sticky;top:0;min-width:0}
 .studypane[hidden]{display:none}
 .studybar{display:flex;align-items:center;gap:10px;padding:10px 16px;border-bottom:1px solid var(--line);font-size:13px;color:var(--muted)}
@@ -1292,7 +1296,7 @@ function viewMeetings(){
     items += `<div class="mitem ${sel === m._key ? 'on' : ''}" data-act="mtg-open" data-id="${esc(m._key)}">
       <div class="mt">${esc(m.title || '(제목 없는 회의)')}</div>
       <div class="meta"><span class="num">${m.date ? shortLabel(m.date) : ''}${m.time ? ' ' + esc(m.time) : ''}</span>${m.type ? `<span class="tag">${esc(m.type)}</span>` : ''}${acts.length ? `<span class="${ad === acts.length ? 'okc' : ''}">액션 ${ad}/${acts.length}</span>` : ''}${m.shareUrl ? '<span class="okc">🔗 정리본</span>' : ''}</div>
-      ${m.decisions ? `<div class="mprev">✔ ${esc(m.decisions.split('\n')[0].slice(0,60))}</div>` : ''}</div>`;
+      ${(m.notes || '').trim() ? `<div class="mprev">${esc(m.notes.trim().split('\n')[0].replace(/^[#>*\-\s]+/, '').slice(0,60))}</div>` : m.decisions ? `<div class="mprev">✔ ${esc(m.decisions.split('\n')[0].slice(0,60))}</div>` : ''}</div>`;
   });
   const listCol = `<section class="card mlist">
     <div class="row" style="margin-bottom:10px"><input type="text" placeholder="회의록 검색 (제목·참석자·내용)" value="${esc(state.mtgQ)}" data-act-input="mtg-search" autocomplete="off"></div>
@@ -1323,22 +1327,13 @@ function meetingEditor(key){
       <div class="row" style="gap:6px"><input type="url" ${bind(key,'shareUrl')} value="${esc(m.shareUrl || '')}" placeholder="Claude가 만든 회의록의 공유 링크를 붙여넣으세요" autocomplete="off" data-rerender="1" style="flex:1;min-width:0">
         ${m.shareUrl ? `<button class="btn sm" data-act="mtg-link-copy" data-id="${esc(key)}">링크 복사</button><a class="btn sm" href="${esc(m.shareUrl)}" target="_blank" rel="noopener">열기 ↗</a>` : ''}</div>
     </div>
-    ${ta('agenda','안건','1. \n2. ')}
-    ${ta('notes','논의 내용','누가 어떤 의견을 냈는지, 핵심 내용 위주로', true)}
-    ${ta('decisions','결정 사항','합의된 것, 확정된 것')}
-    <label class="f">액션 아이템 <span class="num" style="font-weight:500">${acts.length ? `${acts.filter(a=>a.done).length}/${acts.length}` : ''}</span></label>
-    <div class="acts">${acts.map((a,i) => `<div class="act ${a.done ? 'done' : ''}">
-        <input type="checkbox" class="cb" data-act="mact-toggle" data-id="${esc(key)}" data-i="${i}" ${a.done ? 'checked' : ''}>
-        <div class="abody"><div class="atext">${esc(a.text)}</div>
-          <div class="meta">${a.owner ? `<span>👤 ${esc(a.owner)}</span>` : ''}${a.due ? `<span class="num">~${shortLabel(a.due)}</span>` : ''}
-          ${a.linked ? '<span class="okc">할 일에 추가됨 ✓</span>' : `<button class="subtoggle" data-act="mact-todo" data-id="${esc(key)}" data-i="${i}">→ 내 할 일로 보내기</button>`}</div></div>
-        <button class="x" data-act="mact-del" data-id="${esc(key)}" data-i="${i}" aria-label="삭제">✕</button></div>`).join('')}</div>
-    <form class="actadd" data-form="mact-add" data-id="${esc(key)}">
-      <input type="text" name="t" placeholder="할 일 (예: 제안서 초안 공유)" autocomplete="off" required>
-      <input type="text" name="o" placeholder="담당자" autocomplete="off">
-      <input type="date" name="d" title="기한">
-      <button class="btn">추가</button></form>
-    ${ta('memo','기타 메모 · 다음 회의','다음 회의 일정, 준비할 것, 개인 메모')}
+    <label class="f">회의 내용 요약</label><textarea class="msum" ${bind(key, 'notes')} placeholder="Claude에게 받은 회의 요약을 그대로 붙여넣으세요.">${esc(m.notes || '')}</textarea>
+    ${(m.agenda || '').trim() || (m.decisions || '').trim() || (m.memo || '').trim() || acts.length ? `<details class="mold"><summary>이전 형식으로 적은 내용</summary>
+      ${(m.agenda || '').trim() ? ta('agenda','안건','') : ''}
+      ${(m.decisions || '').trim() ? ta('decisions','결정 사항','') : ''}
+      ${acts.length ? `<label class="f">액션 아이템</label><div class="moldacts">${acts.map(a => `<div>${a.done ? '☑' : '☐'} ${esc(a.text)}${a.owner ? ' · ' + esc(a.owner) : ''}${a.due ? ' · ~' + shortLabel(a.due) : ''}${a.linked ? ' <span class="okc">할 일에 있음</span>' : ''}</div>`).join('')}</div>` : ''}
+      ${(m.memo || '').trim() ? ta('memo','기타 메모','') : ''}
+    </details>` : ''}
     <div class="hint" style="margin-top:12px;font-size:12px">${up ? `마지막 수정 ${up.getMonth()+1}/${up.getDate()} ${pad(up.getHours())}:${pad(up.getMinutes())}` : ''}</div>
   </section>`;
 }
@@ -1349,14 +1344,14 @@ function meetingText(m){
   if(m.attendees) L.push(`참석자: ${m.attendees}`);
   if(m.shareUrl) L.push(`정리본: ${m.shareUrl}`);
   const sec = (t, v) => { if((v||'').trim()) { L.push(''); L.push(`■ ${t}`); L.push(v.trim()); } };
-  sec('안건', m.agenda); sec('논의 내용', m.notes); sec('결정 사항', m.decisions);
+  sec('회의 내용 요약', m.notes); sec('안건', m.agenda); sec('결정 사항', m.decisions);
   if(acts.length){ L.push(''); L.push('■ 액션 아이템'); acts.forEach(a => L.push(`${a.done ? '[x]' : '[ ]'} ${a.text}${a.owner ? ' / ' + a.owner : ''}${a.due ? ' / ~' + shortLabel(a.due) : ''}`)); }
   sec('기타 메모', m.memo);
   return L.join('\n');
 }
 const CLAUDE_NEW = 'https://claude.ai/new';
 function meetingRequest(m){
-  const L = ['/meeting-minutes', '', '아래 회의를 내 회의록 정리 형식으로 정리하고, 공유할 수 있는 페이지로 만들어줘.', '녹음 스크립트와 메모 파일은 첨부할게.', ''];
+  const L = ['/meeting-minutes', '', '아래 회의를 내 회의록 정리 형식으로 정리하고, 공유할 수 있는 페이지로 만들어줘.', '녹음 스크립트와 메모 파일은 첨부할게.', '페이지와 별도로, 회의록 앱의 "회의 내용 요약" 칸에 그대로 붙여넣을 수 있는 텍스트 요약도 함께 줘.', ''];
   L.push(`회의명: ${m.title || '(미정)'}`);
   L.push(`일시: ${m.date ? dayLabel(m.date) : ''}${m.time ? ' ' + m.time : ''}${m.type ? ' · ' + m.type : ''}`);
   if(m.attendees) L.push(`참석: ${m.attendees}`);
