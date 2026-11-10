@@ -211,7 +211,13 @@ label.f:first-child{margin-top:0}
 .subbar i{display:block;height:100%;background:var(--accent)}
 .subs{flex-basis:100%;margin:6px 0 2px 38px;padding:4px 0 2px 12px;border-left:2px solid var(--line)}
 .sub{display:flex;align-items:center;gap:9px;padding:5px 0}
-.sub .stx{flex:1;min-width:0;font-size:14px;word-break:break-word}
+.sub .stx{flex:1;min-width:0;font-size:14px;word-break:break-word;white-space:pre-wrap}
+.sub{align-items:flex-start}
+.sub .cb.sm{margin-top:2px}
+.subadd textarea{flex:1;min-height:34px;border:0;border-bottom:1px dashed var(--line);border-radius:0;background:transparent;padding:6px 2px;font-size:14px;line-height:1.5}
+.subadd textarea:focus{box-shadow:none;border-bottom-color:var(--accent);background:transparent}
+.subadd{align-items:flex-start}
+.subadd .plus{padding-top:6px}
 .sub.done .stx{color:var(--faint);text-decoration:line-through}
 .cb.sm{width:17px;height:17px;border-radius:5px}
 .cb.sm:checked::after{width:4px;height:8px}
@@ -1010,7 +1016,7 @@ const ROUTES = [
 const state = {
   route:'today', date: today(), calMonth: monthKey(today()), attMonth: monthKey(today()),
   openTodos:new Set(), mtgId:null, mtgQ:'', revTab:'day', revWeek: today(), revMonth: monthKey(today()), todoFilter:'open', banner:'', pendingRender:false,
-  wkSel: today(), memoQ:'', recOpen:false
+  wkSel: today(), memoQ:'', recOpen:false, subDraft:{}
 };
 function currentRoute(){ const h = (location.hash || '').slice(1); return ROUTES.some(r => r[0] === h) ? h : 'today'; }
 
@@ -1051,7 +1057,7 @@ function showStudy(on){
 function isEditing(){ const a = document.activeElement; return a && /^(INPUT|TEXTAREA|SELECT)$/.test(a.tagName) && (a.closest('#main') || a.closest('#modalRoot')); }
 function softRender(){ if(isEditing() || document.querySelector('.modal-bg') || document.querySelector('.wheel-bg')) state.pendingRender = true; else render(); }
 document.addEventListener('focusout', () => setTimeout(() => { if(state.pendingRender && !isEditing() && !document.querySelector('.modal-bg') && !document.querySelector('.wheel-bg')) render(); }, 60));
-function autosize(t){ t.style.height = 'auto'; t.style.height = Math.max(64, t.scrollHeight + 2) + 'px'; }
+function autosize(t){ t.style.height = 'auto'; t.style.height = Math.max(Number(t.dataset.min) || 64, t.scrollHeight + 2) + 'px'; }
 
 function topbar(){
   const S = settings(), p = probation(), h = new Date().getHours();
@@ -1186,7 +1192,7 @@ function todoRow(t, ref){
     ${open ? `<div class="subs">
       ${subs.map(x => `<div class="sub ${x.done ? 'done' : ''}"><input type="checkbox" class="cb sm" data-act="sub-toggle" data-id="${esc(t.id)}" data-sid="${esc(x.id)}" ${x.done ? 'checked' : ''}>
         <span class="stx">${esc(x.title)}</span><button class="x" data-act="sub-del" data-id="${esc(t.id)}" data-sid="${esc(x.id)}" aria-label="세부 항목 삭제">✕</button></div>`).join('')}
-      <form class="subadd" data-form="sub-add" data-id="${esc(t.id)}"><span class="plus">+</span><input type="text" name="t" placeholder="세부 항목 추가 후 Enter" autocomplete="off"></form>
+      <form class="subadd" data-form="sub-add" data-id="${esc(t.id)}"><span class="plus">+</span><textarea name="t" rows="1" data-sub-in="1" data-min="34" data-id="${esc(t.id)}" placeholder="세부 항목 입력 · Enter로 추가, Shift+Enter로 줄바꿈">${esc(state.subDraft[t.id] || '')}</textarea><button class="btn sm">추가</button></form>
     </div>` : ''}</li>`;
 }
 function weekDue(date){ const w = weekInfo(date), fri = addDays(w.start, 4); return date <= fri ? fri : w.end; }
@@ -1479,7 +1485,7 @@ function openTodoModal(id){
     <div style="flex:1"><label class="f">우선순위</label><select name="p">${prioOptions(prioOf(x))}</select></div></div>
     <label class="f">프로젝트 · 태그</label><input type="text" name="g" value="${esc(x.tag||'')}" autocomplete="off">
     <label class="f">메모</label><textarea name="m">${esc(x.memo||'')}</textarea>
-    ${(x.subs||[]).length ? `<label class="f">세부 항목 <span class="num" style="font-weight:500">${(x.subs||[]).filter(y=>y.done).length}/${x.subs.length}</span></label><div class="hint">${x.subs.map(y => (y.done ? '✓ ' : '· ') + esc(y.title)).join('<br>')}</div>` : ''}
+    ${(x.subs||[]).length ? `<label class="f">세부 항목 <span class="num" style="font-weight:500">${(x.subs||[]).filter(y=>y.done).length}/${x.subs.length}</span></label><div class="hint" style="white-space:pre-wrap">${x.subs.map(y => (y.done ? '✓ ' : '· ') + esc(y.title)).join('<br>')}</div>` : ''}
     <div class="actions"><button type="button" class="btn ghost" style="color:var(--red)" data-act="todo-del" data-id="${esc(id)}">삭제</button><span class="grow"></span><button type="button" class="btn ghost" data-act="modal-close">취소</button><button class="btn pri">저장</button></div></form>`);
 }
 
@@ -1734,7 +1740,14 @@ const actions = {
   'clock-in': () => { const t = today(); mutDay(t, d => { d.inAt = nowHM(); if(!d.workType) d.workType = '사무실'; const S = settings(); d.checks = d.checks || {}; if(S.checklist[0] && /출근/.test(S.checklist[0].text)) d.checks[S.checklist[0].id] = true; }); render(); toast(`${nowHM()} 출근 기록했어요. 오늘도 힘내요!`); },
   'clock-out': () => { const t = today(); mutDay(t, d => { d.outAt = nowHM(); }); render(); const d = dayDoc(t); toast(`${nowHM()} 퇴근 · 오늘 ${fmtMin(workMin(d))} 근무했어요`); },
   'due-chip': el => { const f = el.closest('form'); if(f && f.d) f.d.value = dueFor(el.dataset.k, today()) || ''; },
-  'sub-open': el => { const id = el.dataset.id; if(state.openTodos.has(id)) state.openTodos.delete(id); else state.openTodos.add(id); render(); if(state.openTodos.has(id)) focusSub(id); },
+  'sub-open': el => { const id = el.dataset.id;
+    if(state.openTodos.has(id)){
+      // 닫을 때 쓰던 세부 항목이 있으면 버리지 않고 저장해요
+      const v = (state.subDraft[id] || '').trim();
+      if(v){ mutTodos(items => { const t = items.find(x => x.id === id); if(t){ t.subs = t.subs || []; t.subs.push({ id:uid(), title:v, done:false }); } }); delete state.subDraft[id]; toast('작성 중이던 세부 항목을 저장했어요'); }
+      state.openTodos.delete(id);
+    } else state.openTodos.add(id);
+    render(); if(state.openTodos.has(id)) focusSub(id); },
   'sub-toggle': el => { let allDone = false, parentDone = false;
     mutTodos(items => { const t = items.find(x => x.id === el.dataset.id); if(!t) return; const sub = (t.subs||[]).find(x => x.id === el.dataset.sid); if(sub) sub.done = el.checked; allDone = t.subs.length && t.subs.every(x => x.done); parentDone = t.done; });
     render();
@@ -1889,7 +1902,7 @@ const forms = {
   'login-code': async f => { const c = f.c.value.trim(); if(!c) return; loginState.busy = true; renderLogin();
     try{ const sb = await getSupabase(); const { error } = await sb.auth.verifyOtp({ email:loginState.email, token:c, type:'email' }); if(error) throw error; location.reload(); }
     catch(e){ loginState.busy = false; loginState.msg = '코드가 맞지 않거나 만료됐어요. 메일의 링크를 눌러도 돼요.'; renderLogin(); } },
-  'sub-add': f => { const v = f.t.value.trim(), id = f.dataset.id; if(!v) return; mutTodos(items => { const t = items.find(x => x.id === id); if(t){ t.subs = t.subs || []; t.subs.push({ id:uid(), title:v, done:false }); } }); render(); focusSub(id); },
+  'sub-add': f => { const v = f.t.value.trim(), id = f.dataset.id; if(!v) return; delete state.subDraft[id]; mutTodos(items => { const t = items.find(x => x.id === id); if(t){ t.subs = t.subs || []; t.subs.push({ id:uid(), title:v, done:false }); } }); render(); focusSub(id); },
   'mact-add': f => { const key = f.dataset.id, t = f.t.value.trim(); if(!t) return;
     Store.mutate(key, m => { m.actions = m.actions || []; m.actions.push({ id:uid(), text:t, owner:f.o.value.trim(), due:f.d.value || '', done:false }); m.updatedAt = new Date().toISOString(); });
     render(); const el = document.querySelector('form[data-form="mact-add"] input[name=t]'); if(el) el.focus(); },
@@ -1949,7 +1962,7 @@ const forms = {
   },
   'list-add': f => { const t = f.t.value.trim(), k = f.dataset.list; if(!t) return; Store.mutate('settings', s => { s[k] = s[k] || []; s[k].push({ id:uid(), text:t }); }); render(); focusForm('list-add', k); }
 };
-function focusSub(id){ const el = document.querySelector(`form[data-form="sub-add"][data-id="${id}"] input`); if(el) el.focus(); }
+function focusSub(id){ const el = document.querySelector(`form[data-form="sub-add"][data-id="${id}"] textarea`); if(el){ el.focus(); el.setSelectionRange(el.value.length, el.value.length); } }
 function focusForm(name, list){ const el = document.querySelector(`form[data-form="${name}"]${list ? `[data-list="${list}"]` : ''} input[type=text]`); if(el) el.focus(); }
 
 /* ---------- events ---------- */
@@ -1967,6 +1980,7 @@ document.addEventListener('input', e => {
   if(t.dataset && t.dataset.actInput === 'memo-search'){ state.memoQ = t.value; clearTimeout(mtgSearchTimer); mtgSearchTimer = setTimeout(() => { const pos = t.selectionStart; render(); const n = document.querySelector('[data-act-input="memo-search"]'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } }, 250); return; }
   if(t.dataset && t.dataset.actInput === 'mtg-search'){ state.mtgQ = t.value; clearTimeout(mtgSearchTimer); mtgSearchTimer = setTimeout(() => { const pos = t.selectionStart; render(); const n = document.querySelector('[data-act-input="mtg-search"]'); if(n){ n.focus(); try{ n.setSelectionRange(pos,pos); }catch(e){} } }, 250); return; }
   if(t.tagName === 'TEXTAREA') autosize(t);
+  if(t.dataset && t.dataset.subIn){ state.subDraft[t.dataset.id] = t.value; return; }
   if(!t.dataset || !t.dataset.bind) return;
   const [doc, path] = t.dataset.bind.split('|');
   let v = t.type === 'number' ? (t.value === '' ? null : Number(t.value)) : t.value;
@@ -1986,6 +2000,8 @@ document.addEventListener('change', e => {
 document.addEventListener('keydown', e => {
   if(e.key === 'Escape' && document.querySelector('.modal-bg')) closeModal();
   if(e.key === 'Enter' && (e.ctrlKey || e.metaKey) && e.target.dataset && e.target.dataset.memoIn && e.target.form){ e.preventDefault(); e.target.form.requestSubmit(); }
+  // 세부 항목: Enter = 추가, Shift+Enter = 줄바꿈 (한글 조합 중 Enter는 무시, 휴대폰은 줄바꿈 후 추가 버튼)
+  if(e.key === 'Enter' && !e.shiftKey && !e.isComposing && e.keyCode !== 229 && e.target.dataset && e.target.dataset.subIn && e.target.form && !matchMedia('(pointer:coarse)').matches){ e.preventDefault(); e.target.form.requestSubmit(); }
 });
 /* 필수 기록 · 하루 회고 접기/펼치기 상태 기억 (toggle은 버블링되지 않아 캡처로 받아요) */
 document.addEventListener('toggle', e => { const d = e.target; if(!d.classList || !d.classList.contains('recs')) return; state.recOpen = d.open; if(d.open) d.querySelectorAll('textarea').forEach(autosize); }, true);
