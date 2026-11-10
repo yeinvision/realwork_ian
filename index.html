@@ -1042,7 +1042,7 @@ const ROUTES = [
 const state = {
   route:'today', date: today(), calMonth: monthKey(today()), attMonth: monthKey(today()),
   openTodos:new Set(), mtgId:null, mtgQ:'', revTab:'day', revWeek: today(), revMonth: monthKey(today()), todoFilter:'open', banner:'', pendingRender:false,
-  wkSel: today(), memoQ:'', recOpen:false, subDraft:{}, memoDraft:''
+  wkSel: today(), memoQ:'', recOpen:false, subDraft:{}, memoDraft:(() => { try{ return localStorage.getItem('ijn-memoDraft') || ''; }catch(e){ return ''; } })()
 };
 function currentRoute(){ const h = (location.hash || '').slice(1); return ROUTES.some(r => r[0] === h) ? h : 'today'; }
 
@@ -1442,7 +1442,7 @@ function rteBox(html, ph, draft){
     <button type="button" data-rte="ol" title="번호 목록 (1. 쓰고 띄어쓰기)">1.</button>
     <button type="button" data-rte="ul" title="글머리 목록 (- 쓰고 띄어쓰기)">•</button>
     <button type="button" data-rte="emoji" title="이모지 (Windows + . 도 돼요)">😀</button>
-    <span class="rtehint">1. 띄어쓰기 → 번호 목록 · Tab 들여쓰기 · -&gt; 는 →</span>
+    <span class="rtehint">1. 띄어쓰기 → 번호 목록 · Tab 들여쓰기 · 줄 맨 앞 Backspace로 번호 풀기 · -&gt; 는 →</span>
     <div class="emojis">${EMOJIS.map(e => `<button type="button" data-emo="${e}">${e}</button>`).join('')}</div>
     <div class="rtecolors"><button type="button" class="rtecolor-default" data-color="" title="기본색">A<span>기본</span></button>${RTE_COLORS.map(c => `<button type="button" data-color="${c[1]}" title="${c[0]}" style="color:${c[1]}">A<span>${c[0]}</span></button>`).join('')}</div>
   </div><div class="rte" contenteditable="true" data-memo-in="1" ${draft ? 'data-draft="1"' : ''} data-ph="${esc(ph)}">${html}</div></div>`;
@@ -1463,7 +1463,7 @@ function openMemoModal(id){
   const m = memos().find(x => x.id === id); if(!m) return;
   openModal(`<h3>메모 <span class="hint num" style="font-weight:400">${esc(memoWhen(m.createdAt))}</span></h3><form data-form="memo-save" data-id="${esc(id)}">
     ${rteBox(memoHTML(m), '메모 내용', false)}
-    <div class="actions"><button type="button" class="btn ghost" style="color:var(--red)" data-act="memo-del" data-id="${esc(id)}">삭제</button><span class="grow"></span><button type="button" class="btn ghost" data-act="memo-copy" title="목록·굵게·색을 살려 복사해요. 메일·문서·메신저에 바로 붙여넣으세요.">복사</button><button type="button" class="btn ghost" data-act="modal-close">취소</button><button class="btn pri">저장</button></div></form>`);
+    <div class="actions"><button type="button" class="btn ghost" style="color:var(--red)" data-act="memo-del" data-id="${esc(id)}">삭제</button><span class="hint memo-saved" style="margin-left:8px">입력하면 자동 저장돼요</span><span class="grow"></span><button type="button" class="btn ghost" data-act="memo-copy" title="목록·굵게·색을 살려 복사해요. 메일·문서·메신저에 바로 붙여넣으세요.">복사</button><button type="button" class="btn ghost" data-act="modal-close">닫기</button><button class="btn pri">저장</button></div></form>`);
   document.querySelector('#modalRoot .modal').style.maxWidth = '680px';
   const ed = document.querySelector('#modalRoot .rte'); if(ed) rteFocusEnd(ed);
 }
@@ -1495,7 +1495,20 @@ function rteCmd(ed, cmd){
   else if(cmd === 'smaller') rteFontStep(ed, -1);
   rteSaveDraft(ed);
 }
-function rteSaveDraft(ed){ if(ed.textContent === '' && !ed.querySelector('li')) ed.innerHTML = ''; if(ed.dataset.draft) state.memoDraft = ed.innerHTML; }
+function rteSaveDraft(ed){ if(ed.textContent === '' && !ed.querySelector('li')) ed.innerHTML = '';
+  if(ed.dataset.draft){ state.memoDraft = ed.innerHTML; try{ localStorage.setItem('ijn-memoDraft', ed.innerHTML); }catch(e){} }
+  else { const f = ed.closest('form[data-form="memo-save"]'); if(f){ clearTimeout(memoAutoT); memoAutoT = setTimeout(() => memoAutoSave(f), 700); } } }
+let memoAutoT = null;
+function memoAutoSave(f){ // 메모 수정 창: 입력하면 자동 저장, 창을 닫을 때(Esc·바깥 클릭 포함)도 저장
+  clearTimeout(memoAutoT); memoAutoT = null;
+  if(!f || !f.isConnected) return false;
+  const id = f.dataset.id, ed = f.querySelector('.rte'); if(!ed) return false;
+  const t = rteText(ed); if(!t.trim()) return false; // 다 지운 상태는 저장하지 않아요 (지우려면 삭제 버튼)
+  const html = cleanHTML(ed.innerHTML); let changed = false;
+  Store.mutate('memos', d => { const m = (d.items || []).find(x => x.id === id); if(m && (m.html !== html || m.text !== t)){ m.html = html; m.text = t; m.updatedAt = new Date().toISOString(); changed = true; } });
+  if(changed){ state.pendingRender = true; const s = f.querySelector('.memo-saved'); if(s) s.textContent = '자동 저장됨 ' + new Date().toTimeString().slice(0,5); }
+  return changed;
+}
 function rteLineStart(node, ed){
   let n = node;
   while(n && n !== ed && !/^(DIV|P|LI)$/.test(n.nodeName)){
@@ -1519,6 +1532,27 @@ function rteAuto(ed, data){ // 입력 이벤트가 끝난 뒤 실행해요 (편�
     if(/^1[.)][\s ]$/.test(before)){ pick(0, off); document.execCommand('delete'); document.execCommand('insertOrderedList'); }
     else if(/^[-*][\s ]$/.test(before)){ pick(0, off); document.execCommand('delete'); document.execCommand('insertUnorderedList'); }
   }
+}
+function rteCaretLi(ed){
+  const s = getSelection(); if(!s.rangeCount || !s.isCollapsed) return null;
+  const n = s.anchorNode, el = n && (n.nodeType === 1 ? n : n.parentElement), li = el && el.closest('li');
+  return li && ed.contains(li) ? li : null;
+}
+function rteOutdent(ed, li){
+  const list = li.parentElement, host = list && list.parentElement;
+  if(!(host && host.nodeName === 'LI' && ed.contains(host))){ document.execCommand('outdent'); return; }
+  // 하위 목록이 바깥 줄(li) 안에 들어 있는 모양: 이 줄을 바깥 줄 바로 다음으로 옮겨요 (뒤따르던 하위 줄은 이 줄의 하위로)
+  const rest = []; for(let n = li.nextSibling; n; n = n.nextSibling) rest.push(n);
+  if(rest.length){ const sub = document.createElement(list.nodeName); rest.forEach(n => sub.appendChild(n)); li.appendChild(sub); }
+  host.after(li); if(!list.children.length) list.remove();
+  rteCaretTo(li);
+}
+function rteCaretTo(li){ const r = document.createRange(), t = li.firstChild; if(t && t.nodeType === 3) r.setStart(t, 0); else r.setStart(li, 0); r.collapse(true); const s = getSelection(); s.removeAllRanges(); s.addRange(r); }
+function rteLiOwn(li){ const c = li.cloneNode(true); c.querySelectorAll('ol,ul').forEach(x => x.remove()); return c; } // 하위 목록을 뺀 그 줄 자체
+function rteLiEmpty(li){ const c = rteLiOwn(li); return !c.textContent.replace(/[​\s ]/g, '') && !c.querySelector('img') && !li.querySelector('ol,ul'); }
+function rteAtLiStart(li){
+  const s = getSelection(), r = document.createRange(); r.setStart(li, 0); r.setEnd(s.anchorNode, s.anchorOffset);
+  const frag = r.cloneContents(); return !frag.textContent.replace(/​/g, '') && !frag.querySelector('img,br');
 }
 document.addEventListener('mousedown', e => {
   const b = e.target.closest && e.target.closest('[data-rte],[data-emo],[data-color]');
@@ -1558,6 +1592,11 @@ document.addEventListener('keydown', e => {
     if(el && el.closest('li') && ed.contains(el)) document.execCommand(e.shiftKey ? 'outdent' : 'indent');
     else if(!e.shiftKey) document.execCommand('insertText', false, '    ');
     rteSaveDraft(ed); return;
+  }
+  // 목록 풀기: 빈 번호 줄에서 Enter, 또는 줄 맨 앞에서 Backspace → 한 단계씩 바깥으로 (맨 바깥이면 번호 없는 보통 줄)
+  if((e.key === 'Enter' || e.key === 'Backspace') && !e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey && !e.isComposing){
+    const li = rteCaretLi(ed);
+    if(li && (e.key === 'Enter' ? rteLiEmpty(li) : rteAtLiStart(li))){ e.preventDefault(); rteOutdent(ed, li); rteSaveDraft(ed); return; }
   }
   if((e.ctrlKey || e.metaKey) && !e.altKey){
     const k = e.key, c = e.code;
@@ -1937,7 +1976,7 @@ function viewPrefs(){
 
 /* ---------- modal & toast ---------- */
 function openModal(html){ document.getElementById('modalRoot').innerHTML = `<div class="modal-bg" data-act="modal-bg"><div class="modal" role="dialog">${html}</div></div>`; document.querySelectorAll('#modalRoot textarea').forEach(autosize); const f = document.querySelector('#modalRoot input[type=text]'); if(f) setTimeout(() => f.focus(), 30); }
-function closeModal(){ document.getElementById('modalRoot').innerHTML = ''; if(state.pendingRender) render(); }
+function closeModal(){ const mf = document.querySelector('#modalRoot form[data-form="memo-save"]'); if(mf) memoAutoSave(mf); document.getElementById('modalRoot').innerHTML = ''; if(state.pendingRender) render(); }
 let toastTimer, undoFn = null;
 function toast(msg, undo, label){
   undoFn = undo || null;
@@ -2133,7 +2172,7 @@ const forms = {
     mutTodos(items => items.push({ id:uid(), title:t, due:date, priority:p, status:'todo', tag:'', done:false, doneAt:null, createdAt:new Date().toISOString() }));
     render(); const sel = document.querySelector('form[data-form="wk-add"] select[name=p]'); if(sel){ sel.value = p; sel.className = 'psel p-' + p; } focusForm('wk-add'); },
   'memo-add': f => { const ed = f.querySelector('.rte'); const t = rteText(ed); if(!t.trim()) return; const html = cleanHTML(ed.innerHTML), now = new Date().toISOString();
-    Store.mutate('memos', d => { d.items = d.items || []; d.items.push({ id:uid(), html, text:t, createdAt:now, updatedAt:now }); }); state.memoDraft = ''; render(); toast('메모를 저장했어요');
+    Store.mutate('memos', d => { d.items = d.items || []; d.items.push({ id:uid(), html, text:t, createdAt:now, updatedAt:now }); }); state.memoDraft = ''; try{ localStorage.removeItem('ijn-memoDraft'); }catch(e){} render(); toast('메모를 저장했어요');
     const m = document.querySelector('[data-memo-in]'); if(m) m.focus(); },
   'memo-save': f => { const id = f.dataset.id, ed = f.querySelector('.rte'), t = rteText(ed), html = cleanHTML(ed.innerHTML);
     Store.mutate('memos', d => { const m = (d.items || []).find(x => x.id === id); if(m && (m.html !== html || m.text !== t)){ m.html = html; m.text = t; m.updatedAt = new Date().toISOString(); } }); closeModal(); render(); },
