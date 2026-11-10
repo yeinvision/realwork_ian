@@ -465,7 +465,14 @@ select.ssel.s-done{color:var(--faint)}
 .emojis.open{display:grid}
 .emojis button{border:0;background:transparent;border-radius:8px;height:36px;font-size:20px;padding:0}
 .emojis button:hover{background:var(--hover)}
-@media (max-width:760px){.rtehint{display:none}.emojis{grid-template-columns:repeat(6,40px)}}
+.rtecolor-ico{display:inline-block;padding-bottom:1px;border-bottom:3px solid;border-image:linear-gradient(90deg,#e5484d,#e8730c,#c99a06,#2f9e44,#3b82f6,#9b59d0) 1;font-weight:700}
+.rtecolors{position:absolute;top:calc(100% + 4px);left:8px;z-index:30;display:none;grid-template-columns:repeat(4,64px);gap:4px;padding:8px;background:var(--modal);border:1px solid var(--line);border-radius:12px;box-shadow:0 12px 30px rgba(0,0,0,.35)}
+.rtecolors.open{display:grid}
+.rtecolors button{display:flex;align-items:center;gap:6px;height:34px;padding:0 8px;border:1px solid transparent;border-radius:8px;background:transparent;font-size:16px;font-weight:700}
+.rtecolors button span{font-size:12px;font-weight:400;color:var(--ink)}
+.rtecolors button:hover{background:var(--hover);border-color:var(--line)}
+.rtecolors .rtecolor-default{color:var(--ink)}
+@media (max-width:760px){.rtehint{display:none}.emojis{grid-template-columns:repeat(6,40px)}.rtecolors{grid-template-columns:repeat(4,60px)}}
 .memogrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
 .memo{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:14px 15px;cursor:pointer;display:flex;flex-direction:column;gap:6px;min-height:140px;box-shadow:var(--shadow);min-width:0;text-align:left;width:100%}
 .memo:hover{border-color:var(--line-strong)}
@@ -1348,8 +1355,18 @@ function moveTodo(id, due){
 const memos = () => (Store.get('memos') || {}).items || [];
 const memoWhen = iso => { const d = new Date(iso); return isNaN(d) ? '' : `${dayLabel(ymd(d))} ${pad(d.getHours())}:${pad(d.getMinutes())}`; };
 function memoParts(text){ const lines = String(text || '').trim().split('\n'); const i = lines.findIndex(l => l.trim()); return { head: i > -1 ? lines[i].trim() : '(빈 메모)', body: i > -1 ? lines.slice(i + 1).join('\n').trim() : '' }; }
-/* 메모 편집기: 굵게 · 글자 크기 · 번호/글머리 목록(Tab 들여쓰기) · 이모지 · -> 화살표 자동 변환 */
+/* 메모 편집기: 굵게 · 글자 크기 · 글자 색 · 번호/글머리 목록(Tab 들여쓰기) · 이모지 · -> 화살표 자동 변환 */
 const RTE_OK = new Set(['B','STRONG','I','EM','U','S','STRIKE','BR','DIV','P','OL','UL','LI','FONT']);
+/* 글자 색: 어두운·밝은 배경 모두에서 읽히는 중간 톤 7색만 저장해요 */
+const RTE_COLORS = [['빨강','#e5484d'],['주황','#e8730c'],['노랑','#c99a06'],['초록','#2f9e44'],['파랑','#3b82f6'],['보라','#9b59d0'],['회색','#8c959f']];
+const RTE_COLOR_OK = new Set(RTE_COLORS.map(c => c[1]));
+const RTE_NO_COLOR = '#010203'; // '기본'으로 되돌릴 때 잠깐 쓰는 표시용 색
+function rteHex(v){
+  v = String(v || '').trim().toLowerCase();
+  const m = /^rgb\(\s*(\d{1,3})\s*,\s*(\d{1,3})\s*,\s*(\d{1,3})\s*\)$/.exec(v);
+  if(m) v = '#' + m.slice(1).map(x => Math.min(255, +x).toString(16).padStart(2, '0')).join('');
+  return RTE_COLOR_OK.has(v) ? v : '';
+}
 function cleanHTML(html){
   const t = document.createElement('template'); t.innerHTML = html || '';
   const walk = el => { [...el.childNodes].forEach(n => {
@@ -1357,11 +1374,18 @@ function cleanHTML(html){
       if(/^(SCRIPT|STYLE|IFRAME|OBJECT|EMBED|TEMPLATE|META|LINK|IMG|SVG|VIDEO|AUDIO)$/i.test(n.tagName)){ n.remove(); return; }
       walk(n);
       let el2 = n;
+      const spanColor = n.tagName === 'SPAN' ? rteHex((/(?:^|;)\s*color:\s*([^;]+)/i.exec(n.getAttribute('style') || '') || [])[1]) : '';
       if(n.tagName === 'SPAN' && /font-weight:\s*(bold|[6-9]00)/i.test(n.getAttribute('style') || '')){ el2 = document.createElement('b'); el2.append(...n.childNodes); n.replaceWith(el2); }
+      else if(spanColor){ el2 = document.createElement('font'); el2.setAttribute('color', spanColor); el2.append(...n.childNodes); n.replaceWith(el2); }
       else if(!RTE_OK.has(n.tagName)){ n.replaceWith(...n.childNodes); return; }
       const size = el2.tagName === 'FONT' ? el2.getAttribute('size') : null;
+      const color = el2.tagName === 'FONT' ? rteHex(el2.getAttribute('color')) : '';
       [...el2.attributes].forEach(a => el2.removeAttribute(a.name));
-      if(el2.tagName === 'FONT'){ if(/^[1-7]$/.test(size || '')) el2.setAttribute('size', size); else el2.replaceWith(...el2.childNodes); }
+      if(el2.tagName === 'FONT'){
+        if(/^[1-7]$/.test(size || '')) el2.setAttribute('size', size);
+        if(color) el2.setAttribute('color', color);
+        if(!el2.attributes.length) el2.replaceWith(...el2.childNodes);
+      }
     } else if(n.nodeType !== 3) n.remove();
   }); };
   walk(t.content); return t.innerHTML;
@@ -1393,11 +1417,13 @@ function rteBox(html, ph, draft){
     <button type="button" data-rte="bold" title="굵게 (Ctrl+B)"><b>B</b></button>
     <button type="button" data-rte="bigger" title="글자 크게 (Ctrl+Shift+&gt;)">A<small>+</small></button>
     <button type="button" data-rte="smaller" title="글자 작게 (Ctrl+Shift+&lt;)">A<small>−</small></button>
+    <button type="button" data-rte="color" title="글자 색 (Ctrl+Shift+H: 최근 색 다시 칠하기)" aria-label="글자 색"><span class="rtecolor-ico">A</span></button>
     <button type="button" data-rte="ol" title="번호 목록 (1. 쓰고 띄어쓰기)">1.</button>
     <button type="button" data-rte="ul" title="글머리 목록 (- 쓰고 띄어쓰기)">•</button>
     <button type="button" data-rte="emoji" title="이모지 (Windows + . 도 돼요)">😀</button>
     <span class="rtehint">1. 띄어쓰기 → 번호 목록 · Tab 들여쓰기 · -&gt; 는 →</span>
     <div class="emojis">${EMOJIS.map(e => `<button type="button" data-emo="${e}">${e}</button>`).join('')}</div>
+    <div class="rtecolors"><button type="button" class="rtecolor-default" data-color="" title="기본색">A<span>기본</span></button>${RTE_COLORS.map(c => `<button type="button" data-color="${c[1]}" title="${c[0]}" style="color:${c[1]}">A<span>${c[0]}</span></button>`).join('')}</div>
   </div><div class="rte" contenteditable="true" data-memo-in="1" ${draft ? 'data-draft="1"' : ''} data-ph="${esc(ph)}">${html}</div></div>`;
 }
 function viewMemos(){
@@ -1426,6 +1452,18 @@ function rteFontStep(ed, dir){
   const next = Math.min(7, Math.max(1, cur + dir)); if(next === cur) return;
   document.execCommand('styleWithCSS', false, false);
   document.execCommand('fontSize', false, String(next));
+}
+let rteLastColor = RTE_COLORS[0][1];
+function rteSetColor(ed, color){ // color 가 빈 값이면 기본색으로 되돌려요
+  if(document.activeElement !== ed) rteFocusEnd(ed);
+  document.execCommand('styleWithCSS', false, false);
+  if(color){ document.execCommand('foreColor', false, color); rteLastColor = color; }
+  else {
+    document.execCommand('foreColor', false, RTE_NO_COLOR);
+    ed.querySelectorAll('font').forEach(f => { if((f.getAttribute('color') || '').toLowerCase() === RTE_NO_COLOR){ f.removeAttribute('color'); if(!f.attributes.length) f.replaceWith(...f.childNodes); } });
+    ed.querySelectorAll('span').forEach(sp => { if(/rgb\(1, 2, 3\)/.test(sp.style.color)){ sp.style.color = ''; if(!sp.getAttribute('style')) sp.replaceWith(...sp.childNodes); } });
+  }
+  rteSaveDraft(ed);
 }
 function rteCmd(ed, cmd){
   if(document.activeElement !== ed) rteFocusEnd(ed);
@@ -1462,12 +1500,15 @@ function rteAuto(ed, data){ // 입력 이벤트가 끝난 뒤 실행해요 (편�
   }
 }
 document.addEventListener('mousedown', e => {
-  const b = e.target.closest && e.target.closest('[data-rte],[data-emo]');
-  if(!b){ if(!(e.target.closest && e.target.closest('.emojis'))) document.querySelectorAll('.emojis.open').forEach(x => x.classList.remove('open')); return; }
+  const b = e.target.closest && e.target.closest('[data-rte],[data-emo],[data-color]');
+  if(!b){ if(!(e.target.closest && e.target.closest('.emojis,.rtecolors'))) document.querySelectorAll('.emojis.open,.rtecolors.open').forEach(x => x.classList.remove('open')); return; }
   e.preventDefault(); // 편집기의 커서 위치를 잃지 않도록
   const wrap = b.closest('.rtewrap'), ed = wrap && wrap.querySelector('.rte'); if(!ed) return;
-  if(b.dataset.emo){ if(document.activeElement !== ed) rteFocusEnd(ed); document.execCommand('insertText', false, b.dataset.emo); wrap.querySelector('.emojis').classList.remove('open'); rteSaveDraft(ed); return; }
-  if(b.dataset.rte === 'emoji'){ wrap.querySelector('.emojis').classList.toggle('open'); return; }
+  const emojis = wrap.querySelector('.emojis'), colors = wrap.querySelector('.rtecolors');
+  if(b.dataset.emo){ if(document.activeElement !== ed) rteFocusEnd(ed); document.execCommand('insertText', false, b.dataset.emo); emojis.classList.remove('open'); rteSaveDraft(ed); return; }
+  if(b.dataset.color !== undefined){ rteSetColor(ed, b.dataset.color); colors.classList.remove('open'); return; }
+  if(b.dataset.rte === 'emoji'){ colors.classList.remove('open'); emojis.classList.toggle('open'); return; }
+  if(b.dataset.rte === 'color'){ emojis.classList.remove('open'); colors.classList.toggle('open'); return; }
   rteCmd(ed, b.dataset.rte);
 });
 document.addEventListener('input', e => { const ed = e.target.closest && e.target.closest('.rte'); if(!ed) return; rteSaveDraft(ed);
@@ -1484,6 +1525,7 @@ document.addEventListener('keydown', e => {
   }
   if((e.ctrlKey || e.metaKey) && !e.altKey){
     const k = e.key, c = e.code;
+    if(e.shiftKey && c === 'KeyH'){ e.preventDefault(); rteSetColor(ed, rteLastColor); return; }
     if(k === '>' || (c === 'Period' && !e.shiftKey) || (c === 'Period' && e.shiftKey)){ e.preventDefault(); rteFontStep(ed, 1); rteSaveDraft(ed); return; }
     if(k === '<' || c === 'Comma'){ e.preventDefault(); rteFontStep(ed, -1); rteSaveDraft(ed); return; }
   }
