@@ -428,6 +428,9 @@ select.ssel.s-done{color:var(--faint)}
 .wit .tx .tag{margin-left:6px;vertical-align:1px}
 .wit.done .tx{color:var(--faint);text-decoration:line-through}
 .wit .icon-btn{width:30px;height:30px;font-size:14px}
+.datebtn{position:relative;overflow:hidden;cursor:pointer}
+.datebtn svg{width:15px;height:15px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;pointer-events:none}
+.datebtn input[type=date]{position:absolute;inset:0;width:100%;height:100%;opacity:0;cursor:pointer;padding:0;border:0}
 .wkdrag{font-size:12.5px;color:var(--faint);margin:10px 2px 0}
 .nodue{border:1px dashed var(--line);border-radius:10px;padding:8px;min-height:60px;display:flex;flex-direction:column;gap:2px}
 .nodue.drop{border-color:var(--accent);background:var(--accent-soft)}
@@ -1281,7 +1284,7 @@ function viewWeek(){
       <div class="cardhead"><div><h3>${mdLabel(sel)} 일정</h3><div class="hint">선택한 날짜의 일정을 확인하고 아래에서 바로 추가하세요.</div></div>
         <div class="row" style="flex:none">${left.length ? `<button class="btn sm" data-act="wk-push" data-date="${sel}">남은 일 ${left.length}개 내일로 →</button>` : ''}<span class="chip num">${done} / ${items.length} 완료</span></div></div>
       ${items.length ? `<ul class="witems">${items.map(wkRow).join('')}</ul>` : '<div class="empty">이날 일정이 없어요.</div>'}
-      <div class="wkdrag">⠿ 손잡이나 날짜 칸의 일을 끌어 다른 날짜 칸에 놓거나, ↪ 버튼으로 다음 날로 옮길 수 있어요.</div>
+      <div class="wkdrag">⠿ 손잡이나 날짜 칸의 일을 끌어 다른 날짜 칸에 놓거나, ↪ 버튼으로 다음 날, 달력 버튼으로 원하는 날짜로 옮길 수 있어요.</div>
       <form class="addrow" data-form="wk-add" data-date="${sel}"><input type="text" name="t" placeholder="${sel === t ? '오늘' : mdLabel(sel)} 할 일 추가하기" autocomplete="off"><select name="p" class="psel p-B" data-act-change="psel-color">${prioOptions('B')}</select><button class="btn pri">추가</button></form>
     </section>
     <div class="col">
@@ -1305,6 +1308,7 @@ function wkRow(x){
     ${prioSelect(x)}${statusSelect(x)}
     <button class="btn sm" data-act="todo-edit" data-id="${esc(x.id)}">✎ 메모</button>
     <button class="icon-btn" data-act="wk-next" data-id="${esc(x.id)}" title="다음 날로 옮기기" aria-label="다음 날로 옮기기">↪</button>
+    <span class="icon-btn datebtn" title="날짜 골라 옮기기"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/></svg><input type="date" value="${esc(x.due || '')}" data-act-change="todo-move" data-id="${esc(x.id)}" title="옮길 날짜 선택" aria-label="날짜 골라 옮기기"></span>
   </li>`;
 }
 function moveTodo(id, due){
@@ -1971,6 +1975,7 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if(t.dataset && t.dataset.actChange === 'pick-date' && t.value){ state.date = t.value; render(); return; }
+  if(t.dataset && t.dataset.actChange === 'todo-move'){ moveTodo(t.dataset.id, t.value || null); return; }
   if(t.dataset && t.dataset.actChange === 'psel-color'){ t.className = 'psel p-' + t.value; return; }
   if(t.dataset && t.dataset.actChange === 'todo-prio'){ const v = t.value; t.className = 'psel p-' + v; mutTodos(items => { const x = items.find(y => y.id === t.dataset.id); if(x) x.priority = v; }); t.blur(); render(); return; }
   if(t.dataset && t.dataset.actChange === 'todo-status'){ const v = t.value; mutTodos(items => { const x = items.find(y => y.id === t.dataset.id); if(!x) return; x.status = v; x.done = v === 'done'; x.doneAt = x.done ? (x.doneAt || today()) : null; }); t.blur(); render(); return; }
