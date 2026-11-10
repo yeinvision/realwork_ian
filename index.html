@@ -1411,6 +1411,27 @@ function rteText(root){ // 카드 미리보기 · 검색용 글자 (목록 번�
   [...root.childNodes].forEach(c => walk(c, 0)); if(cur) flush();
   return lines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 }
+/* 복사: 앱 화면 색(어두운 테마 글자색·배경) 없이 깨끗한 HTML + 번호 붙은 글자로 담아요 → 메일·워드·노션·카톡에 붙여도 모양 유지 */
+const RTE_COPY_MARK = 'data-rte-copy';
+const rteHtmlText = html => { const t = document.createElement('template'); t.innerHTML = cleanHTML(html); return rteText(t.content); };
+const rteExportHTML = html => `<div ${RTE_COPY_MARK}="1" style="white-space:pre-wrap">${cleanHTML(html)}</div>`;
+function rteSelectionHTML(range, anc, ed){ // 목록 항목 여러 개를 고르면 바깥 목록까지 감싸 번호 구조를 지켜요
+  const frag = range.cloneContents(); let node = frag;
+  if([...frag.childNodes].some(n => n.nodeName === 'LI')){
+    for(let p = anc; p && p !== ed; p = p.parentNode){ if(/^(OL|UL|LI)$/.test(p.nodeName)){ const w = p.cloneNode(false); w.appendChild(node); node = w; } }
+  }
+  const d = document.createElement('div'); d.appendChild(node); return d.innerHTML;
+}
+function rteCopy(html){ // 메모 전체 복사 (복사 버튼용). 성공하면 true
+  const text = rteHtmlText(html), rich = rteExportHTML(html); let done = false;
+  const h = e => { e.clipboardData.setData('text/plain', text); e.clipboardData.setData('text/html', rich); e.preventDefault(); e.stopImmediatePropagation(); done = true; };
+  document.addEventListener('copy', h, true);
+  try{ document.execCommand('copy'); }catch(_){}
+  document.removeEventListener('copy', h, true);
+  if(done) return Promise.resolve(true);
+  if(navigator.clipboard && window.ClipboardItem) return navigator.clipboard.write([new ClipboardItem({ 'text/html': new Blob([rich], { type:'text/html' }), 'text/plain': new Blob([text], { type:'text/plain' }) })]).then(() => true, () => navigator.clipboard.writeText(text).then(() => true, () => false));
+  return Promise.resolve(false);
+}
 const EMOJIS = ['😀','😂','😊','😍','🤔','😅','😭','😎','👍','👏','🙏','💪','🔥','✨','🎉','✅','❌','⚠️','❗','❓','💡','📌','📎','📝','📅','⏰','🚀','🎯','💬','👀','❤️','⭐','☕','📊','📈','🤝'];
 function rteBox(html, ph, draft){
   return `<div class="rtewrap"><div class="rtebar">
@@ -1442,7 +1463,7 @@ function openMemoModal(id){
   const m = memos().find(x => x.id === id); if(!m) return;
   openModal(`<h3>메모 <span class="hint num" style="font-weight:400">${esc(memoWhen(m.createdAt))}</span></h3><form data-form="memo-save" data-id="${esc(id)}">
     ${rteBox(memoHTML(m), '메모 내용', false)}
-    <div class="actions"><button type="button" class="btn ghost" style="color:var(--red)" data-act="memo-del" data-id="${esc(id)}">삭제</button><span class="grow"></span><button type="button" class="btn ghost" data-act="modal-close">취소</button><button class="btn pri">저장</button></div></form>`);
+    <div class="actions"><button type="button" class="btn ghost" style="color:var(--red)" data-act="memo-del" data-id="${esc(id)}">삭제</button><span class="grow"></span><button type="button" class="btn ghost" data-act="memo-copy" title="목록·굵게·색을 살려 복사해요. 메일·문서·메신저에 바로 붙여넣으세요.">복사</button><button type="button" class="btn ghost" data-act="modal-close">취소</button><button class="btn pri">저장</button></div></form>`);
   document.querySelector('#modalRoot .modal').style.maxWidth = '680px';
   const ed = document.querySelector('#modalRoot .rte'); if(ed) rteFocusEnd(ed);
 }
@@ -1513,7 +1534,22 @@ document.addEventListener('mousedown', e => {
 });
 document.addEventListener('input', e => { const ed = e.target.closest && e.target.closest('.rte'); if(!ed) return; rteSaveDraft(ed);
   if(e.inputType === 'insertText' && /^[  >-]$/.test(e.data || '')){ const d = e.data; setTimeout(() => { rteAuto(ed, d); rteSaveDraft(ed); }, 0); } });
-document.addEventListener('paste', e => { const ed = e.target.closest && e.target.closest('.rte'); if(!ed) return; e.preventDefault(); const t = (e.clipboardData || window.clipboardData).getData('text/plain'); document.execCommand('insertText', false, t); });
+// 붙여넣기: 이 앱 메모에서 복사한 건 목록·굵게·색 그대로, 다른 곳(웹페이지 등)에서 온 건 글자만
+document.addEventListener('paste', e => { const ed = e.target.closest && e.target.closest('.rte'); if(!ed) return; e.preventDefault();
+  const cd = e.clipboardData || window.clipboardData, html = cd.getData ? cd.getData('text/html') : '';
+  if(html && html.includes(RTE_COPY_MARK)){ const t = document.createElement('template'); t.innerHTML = html; const mine = t.content.querySelector(`[${RTE_COPY_MARK}]`);
+    document.execCommand('insertHTML', false, cleanHTML(mine ? mine.innerHTML : html)); rteSaveDraft(ed); return; }
+  document.execCommand('insertText', false, cd.getData('text/plain')); });
+function rteOnCopy(e, cut){
+  const s = getSelection(); if(!s.rangeCount || s.isCollapsed) return;
+  const r = s.getRangeAt(0); let anc = r.commonAncestorContainer; if(anc.nodeType !== 1) anc = anc.parentNode;
+  const ed = anc.closest && anc.closest('.rte'); if(!ed) return;
+  const html = rteSelectionHTML(r, anc, ed);
+  e.clipboardData.setData('text/plain', rteHtmlText(html)); e.clipboardData.setData('text/html', rteExportHTML(html)); e.preventDefault();
+  if(cut){ document.execCommand('delete'); rteSaveDraft(ed); }
+}
+document.addEventListener('copy', e => rteOnCopy(e, false));
+document.addEventListener('cut', e => rteOnCopy(e, true));
 document.addEventListener('keydown', e => {
   const ed = e.target.closest && e.target.closest('.rte'); if(!ed) return;
   if(e.key === 'Tab'){
@@ -1947,6 +1983,9 @@ const actions = {
   'wk-push': el => { const date = el.dataset.date, nx = addDays(date, 1); const ids = todos().filter(t => t.due === date && !t.done).map(t => t.id); if(!ids.length) return;
     const u = snapshotUndo('todos', '일정 이동을'); mutTodos(items => items.forEach(t => { if(ids.includes(t.id)) t.due = nx; })); render(); toast(`남은 일 ${ids.length}개를 ${shortLabel(nx)}로 옮겼어요`, u); },
   'memo-open': el => openMemoModal(el.dataset.id),
+  'memo-copy': async () => { const ed = document.querySelector('#modalRoot .rte'); if(!ed) return;
+    const ok = await rteCopy(ed.innerHTML); if(!ok) console.error('메모를 클립보드에 복사하지 못했어요.');
+    toast(ok ? '메모를 복사했어요. 원하는 곳에 붙여넣으세요.' : '복사하지 못했어요. 브라우저의 클립보드 권한을 확인해주세요.'); },
   'memo-del': el => { const u = snapshotUndo('memos', '메모 삭제를'); Store.mutate('memos', d => { d.items = (d.items || []).filter(m => m.id !== el.dataset.id); }); closeModal(); render(); toast('메모를 삭제했어요', u); },
   'lab-new': () => openLabModal(null),
   'lab-edit': el => openLabModal(el.dataset.id),
