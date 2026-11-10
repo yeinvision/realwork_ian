@@ -453,7 +453,7 @@ select.ssel.s-done{color:var(--faint)}
 .labc{position:relative;min-width:0}
 .lab{display:flex;flex-direction:column;height:100%;background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;text-decoration:none;color:inherit;box-shadow:var(--shadow);transition:border-color .15s}
 a.lab:hover{border-color:var(--accent)}
-.lab .thumb{position:relative;aspect-ratio:16/9;display:grid;place-items:center;background:color-mix(in srgb,var(--c) 20%,var(--card));color:var(--c);font-size:40px;font-weight:700;border-bottom:1px solid var(--line2);overflow:hidden}
+.lab .thumb{position:relative;aspect-ratio:16/9;display:grid;place-items:center;background:color-mix(in srgb,var(--c) 20%,var(--card));color:var(--c);font-size:40px;font-weight:700;white-space:nowrap;border-bottom:1px solid var(--line2);overflow:hidden}
 .lab .thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
 .lab .lb{padding:12px 14px 14px;min-width:0}
 .lab .lt{font-weight:600;font-size:15.5px;word-break:break-word}
@@ -1352,7 +1352,7 @@ function viewLab(){
   const L = labs();
   return `<div class="pagehead"><div class="grow"><h1 class="page">AI 연구소</h1><div class="wkhint">팀에서 만들고 있는 AI 툴 모음이에요. 카드를 누르면 새 탭에서 열려요.</div></div><button class="btn pri" data-act="lab-new">+ AI 툴 추가</button></div>
   <div class="labgrid">${L.map((x, i) => {
-    const c = x.color || LAB_C[i % LAB_C.length], mark = Array.from((x.mark || x.title || '?').trim()).slice(0, 2).join('');
+    const c = x.color || LAB_C[i % LAB_C.length], mark = Array.from((x.mark || x.title || '?').trim()).slice(0, 4).join('').trim();
     return `<div class="labc"><a class="lab" href="${esc(x.url)}" target="_blank" rel="noopener noreferrer">
       <div class="thumb" style="--c:${esc(c)}"><span>${esc(mark)}</span>${x.img ? `<img src="${esc(x.img)}" alt="" loading="lazy" referrerpolicy="no-referrer" onerror="this.remove()">` : ''}</div>
       <div class="lb"><div class="lt">${esc(x.title)}</div>${x.desc ? `<div class="ld">${esc(x.desc)}</div>` : ''}<div class="lu">${esc(hostOf(x.url))} ↗</div></div></a>
@@ -1366,7 +1366,7 @@ function openLabModal(id){
     <label class="f">이름</label><input type="text" name="title" value="${esc(x ? x.title : '')}" required placeholder="예) 제안봇" autocomplete="off">
     <label class="f">링크</label><input type="text" name="url" value="${esc(x ? x.url : '')}" required placeholder="https://..." autocomplete="off" inputmode="url">
     <label class="f">한 줄 설명</label><input type="text" name="desc" value="${esc(x ? x.desc || '' : '')}" placeholder="무엇을 하는 툴인지" autocomplete="off">
-    <div class="row"><div style="flex:1"><label class="f">썸네일 글자 · 이모지</label><input type="text" name="mark" value="${esc(x ? x.mark || '' : '')}" placeholder="비우면 이름 첫 글자" maxlength="4" autocomplete="off"></div>
+    <div class="row"><div style="flex:1"><label class="f">썸네일 글자 · 이모지</label><input type="text" name="mark" value="${esc(x ? x.mark || '' : '')}" placeholder="비우면 이름 앞 4글자" maxlength="4" autocomplete="off"></div>
       <div style="flex:2" class="full-m"><label class="f">썸네일 이미지 주소 (선택)</label><input type="text" name="img" value="${esc(x ? x.img || '' : '')}" placeholder="https://.../image.png" autocomplete="off"></div></div>
     <label class="f">색</label><div class="swatches">${LAB_C.map(c => `<label><input type="radio" name="color" value="${c}" ${c === cur ? 'checked' : ''}><i style="background:${c}"></i></label>`).join('')}</div>
     <div class="actions">${x ? `<button type="button" class="btn ghost" style="color:var(--red)" data-act="lab-del" data-id="${esc(id)}">삭제</button>` : ''}<span class="grow"></span><button type="button" class="btn ghost" data-act="modal-close">취소</button><button class="btn pri">저장</button></div></form>`);
