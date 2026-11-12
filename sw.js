@@ -8,3 +8,8 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return; // Supabase·구글 요청은 건드리지 않아요
   e.respondWith(fetch(e.request).then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return res; }).catch(() => caches.match(e.request).then(r => r || caches.match('./index.html'))));
 });
+// 일정 알림을 누르면 열려 있는 일잘러 노트 창으로 돌아가요
+self.addEventListener('notificationclick', e => {
+  e.notification.close();
+  e.waitUntil(self.clients.matchAll({ type:'window', includeUncontrolled:true }).then(cs => { const c = cs[0]; if(c) return c.focus(); return self.clients.openWindow('./#calendar'); }));
+});

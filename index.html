@@ -44,6 +44,20 @@ html[data-theme=light] .att .big{box-shadow:0 6px 16px rgba(0,168,140,.22)}
 .themebtn:hover{border-color:var(--line-strong)}
 .themebtn svg{width:17px;height:17px;stroke:currentColor;fill:none;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}
 .topright{display:flex;align-items:center;gap:12px}
+.bellbtn.off{width:auto;border-radius:17px;padding:0 12px 0 10px;gap:6px;display:inline-flex;align-items:center;color:var(--amber);background:var(--amber-soft);border-color:color-mix(in srgb,var(--amber) 45%,transparent);font-size:13px;font-weight:600}
+.bellbtn.off svg{width:16px;height:16px}
+#remRoot{position:fixed;right:22px;bottom:22px;z-index:70;display:flex;flex-direction:column;gap:10px;width:min(400px,calc(100vw - 32px))}
+#remRoot:empty{display:none}
+.remcard{background:var(--modal);border:1px solid var(--line-strong);border-left:4px solid var(--accent);border-radius:12px;padding:14px 16px;box-shadow:0 10px 30px rgba(0,0,0,.28)}
+.remcard .rc-top{display:flex;align-items:center;justify-content:space-between;font-size:12.5px;color:var(--accent);font-weight:600}
+.remcard .rc-x{border:0;background:transparent;color:var(--muted);font-size:20px;line-height:1;padding:0 2px}
+.remcard .rc-h{font-size:17px;font-weight:700;color:var(--ink);margin:6px 0 2px;cursor:pointer}
+.remcard .rc-b{font-size:14px;color:var(--muted)}
+.remcard .rc-a{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px;align-items:center}
+.remstat{margin:14px 0 10px;padding:11px 14px;border-radius:10px;background:var(--accent-soft);color:var(--ink);font-size:14px}
+.remstat.off{background:var(--amber-soft)}
+.remseg{display:flex;width:100%}.remseg button{flex:1}
+.remrow{margin:6px 0}
 
 *{box-sizing:border-box}
 html,body{margin:0;background:var(--bg);color:var(--ink);font-family:"IBM Plex Sans KR",system-ui,-apple-system,sans-serif;font-size:15px;line-height:1.55;-webkit-font-smoothing:antialiased}
@@ -528,7 +542,11 @@ button.labadd:hover{border-color:var(--accent);color:var(--ink)}
   .mlogo{display:block;order:-1;width:100%;max-width:96px;height:auto;margin-bottom:2px}
   .main{position:relative}
   .topbar .themebtn{position:absolute;top:14px;right:14px}
-  .topbar{padding-right:42px}
+  .topbar .bellbtn{right:56px}
+  .bellbtn.off .bl{display:none}
+  .bellbtn.off{width:34px;padding:0;justify-content:center}
+  #remRoot{right:16px;bottom:calc(84px + env(safe-area-inset-bottom))}
+  .topbar{padding-right:86px}
   .topright{gap:0}
   .nav{flex-direction:row;justify-content:space-around;width:100%;gap:0}
   .nav a{flex-direction:column;gap:2px;font-size:10.5px;padding:6px 4px;flex:1;text-align:center}
@@ -620,6 +638,7 @@ button.labadd:hover{border-color:var(--accent);color:var(--ink)}
 </div>
 <div id="modalRoot"></div>
 <div id="toastRoot"></div>
+<div id="remRoot"></div>
 <div id="pickRoot"></div>
 
 <script>
@@ -962,6 +981,120 @@ function gcalLine(){
   return `<div class="gline"><span class="dot"></span><span>구글 캘린더${cal ? ' · ' + esc(cal) : ''} ${GCal.status === 'loading' || !t ? '불러오는 중…' : `· ${pad(t.getHours())}:${pad(t.getMinutes())} 동기화`}</span><button class="btn sm ghost" data-act="gcal-refresh">↻ 새로고침</button></div>`;
 }
 
+/* ---------- 일정 알림: 전날 같은 시간 · 1시간 전 · 10분 전 ----------
+   앱이 열려 있는 동안(다른 탭·최소화 포함) 20초마다 오늘·내일 일정을 살펴요.
+   끄기: settings.remind.until(일시정지 끝 시각 ISO 또는 'forever'), settings.remind.off['l:id'|'g:gid'](일정별) */
+const REM_STAGES = [ { k:'day', min:1440, grace:180, name:'전날' }, { k:'h1', min:60, grace:20, name:'1시간 전' }, { k:'m10', min:10, grace:10, name:'10분 전' } ];
+const BELL = '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>';
+const BELL_OFF = BELL + '<path d="M3 3l18 18"/>';
+const Rem = {
+  shown:[],
+  fired:(() => { try{ return JSON.parse(localStorage.getItem('ijn-remFired') || '{}') || {}; }catch(e){ return {}; } })(),
+  cfg(){ const r = settings().remind || {}; return { until:r.until || '', off:r.off || {} }; },
+  pausedUntil(){ const u = this.cfg().until; if(!u) return null; if(u === 'forever') return u; return new Date(u).getTime() > Date.now() ? u : null; },
+  untilLabel(){
+    const p = this.pausedUntil(); if(!p) return ''; if(p === 'forever') return '다시 켤 때까지';
+    const d = new Date(p), tm = `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+    if(tm === '00:00' && ymd(d) === addDays(today(), 1)) return '오늘 하루';
+    return `${ymd(d) === today() ? '' : '내일 '}${tm}까지`;
+  },
+  isOff(key){ return !!this.cfg().off[key]; },
+  persist(){ try{ const cut = Date.now() - 3*864e5; Object.keys(this.fired).forEach(k => { if(this.fired[k] < cut) delete this.fired[k]; }); localStorage.setItem('ijn-remFired', JSON.stringify(this.fired)); }catch(e){} },
+  startMs(date, time){ return parse(date).getTime() + toMin(time)*60e3; },
+  events(from, to){
+    const out = [], gOn = GCal.enabled(), gids = gOn ? GCal.localGids() : null;
+    for(let s = from; s <= to; s = addDays(s,1)){
+      (dayDoc(s).events || []).forEach(e => { if(e.time) out.push({ key:'l:' + e.id, date:s, time:e.time, end:e.end || '', title:e.title || '(제목 없음)', sub:(e.memo || '').split('\n')[0].slice(0,80), local:true }); });
+      if(gOn) GCal.eventsOn(s, gids).forEach(g => { if(!g.allDay && g.time) out.push({ key:'g:' + g.gid, date:s, time:g.time, end:g.end || '', title:g.title, sub:g.location || '', local:false }); });
+    }
+    return out.map(x => Object.assign(x, { at:this.startMs(x.date, x.time) })).sort((a,b) => a.at - b.at);
+  },
+  fid(x, st){ return `${x.key}|${st.k}|${x.date}|${x.time}`; },
+  span(x, i){ const st = REM_STAGES[i], next = REM_STAGES[i+1], from = x.at - st.min*60e3; return [from, Math.min(from + st.grace*60e3, next ? x.at - next.min*60e3 : x.at)]; },
+  tick(){
+    if(Store.mode !== 'db' && Store.mode !== 'local') return;
+    const t = today(), now = Date.now(), paused = this.pausedUntil(); let changed = false;
+    if(GCal.enabled()) GCal.ensure(t, addDays(t,1));
+    this.events(t, addDays(t,1)).forEach(x => REM_STAGES.forEach((st, i) => {
+      const [a, b] = this.span(x, i); if(now < a || now >= b) return;
+      const id = this.fid(x, st); if(this.fired[id]) return;
+      this.fired[id] = now; changed = true;
+      if(!paused && !this.isOff(x.key)) this.notify(x, st, id);   // 꺼져 있던 동안의 알림은 나중에 몰아서 뜨지 않게 '지난 것'으로만 표시해요
+    }));
+    if(changed) this.persist();
+    const c = this.cfg(); if(c.until && !paused){ Store.mutate('settings', s => { s.remind = Object.assign({}, s.remind, { until:'' }); }); softRender(); }
+  },
+  markPast(key, date, time){   // 방금 만들거나 시간을 바꾼 일정: 이미 지난 단계는 바로 뜨지 않게
+    const x = { key, date, time, at:this.startMs(date, time) }, now = Date.now();
+    REM_STAGES.forEach((st, i) => { if(this.span(x, i)[0] <= now) this.fired[this.fid(x, st)] = now; });
+    this.persist();
+  },
+  when(x){
+    if(x.date !== today()) return `내일 ${x.time}`;
+    const m = Math.round((x.at - Date.now())/60e3);
+    if(m <= 0) return '지금 시작'; if(m < 60) return `${m}분 후`;
+    const h = Math.floor(m/60), r = m % 60; return `${h}시간${r ? ` ${r}분` : ''} 후`;
+  },
+  notify(x, st, id){
+    const head = `${this.when(x)} · ${x.title}`;
+    const body = `${x.date === today() ? '오늘' : '내일'} ${x.time}${x.end ? '–' + x.end : ''}${x.sub ? ' · ' + x.sub : ''}`;
+    this.shown = this.shown.filter(s => s.id !== id).concat([{ id, key:x.key, date:x.date, head, body, st:st.name }]).slice(-4);
+    this.paint();
+    this.system(head, body, id, x.date, st.k !== 'day');
+  },
+  system(head, body, id, date, sticky){
+    if(!('Notification' in window) || Notification.permission !== 'granted') return;
+    const opt = { body, tag:id, icon:'icon-192.png', requireInteraction:!!sticky, data:{ date } };
+    try{ const n = new Notification('🔔 ' + head, opt); n.onclick = () => { try{ window.focus(); }catch(e){} n.close(); this.open(date); }; }
+    catch(e){ if(navigator.serviceWorker) navigator.serviceWorker.getRegistration().then(r => r && r.showNotification('🔔 ' + head, opt)).catch(() => {}); }
+  },
+  open(date){ state.calMonth = monthKey(date); if(location.hash !== '#calendar') location.hash = 'calendar'; setTimeout(() => openDayModal(date), 60); },
+  paint(){
+    const root = document.getElementById('remRoot'); if(!root) return;
+    root.innerHTML = this.shown.map(s => `<div class="remcard" role="alert"><div class="rc-top"><span>🔔 ${esc(s.st)} 알림</span><button class="rc-x" data-act="rem-dismiss" data-id="${esc(s.id)}" aria-label="닫기">×</button></div>
+      <div class="rc-h" data-act="rem-open" data-date="${esc(s.date)}" data-id="${esc(s.id)}" title="캘린더에서 보기">${esc(s.head)}</div><div class="rc-b num">${esc(s.body)}</div>
+      <div class="rc-a">${s.key ? `<button class="btn sm" data-act="rem-mute" data-key="${esc(s.key)}" data-id="${esc(s.id)}">이 일정 알림 끄기</button>` : ''}<button class="btn sm" data-act="rem-pause" data-m="today">오늘 알림 모두 끄기</button><span class="grow"></span><button class="btn sm pri" data-act="rem-dismiss" data-id="${esc(s.id)}">확인</button></div></div>`).join('');
+  },
+  dismiss(id){ this.shown = this.shown.filter(s => s.id !== id); this.paint(); },
+  pause(m){
+    let until;
+    if(m === 'forever') until = 'forever';
+    else if(m === 'today') until = parse(addDays(today(), 1)).toISOString();
+    else until = new Date(Date.now() + Number(m)*60e3).toISOString();
+    Store.mutate('settings', s => { s.remind = Object.assign({}, s.remind, { until }); });
+    this.shown = []; this.paint();
+  },
+  resume(){ Store.mutate('settings', s => { s.remind = Object.assign({}, s.remind, { until:'' }); }); },
+  setOff(key, off){
+    if(this.isOff(key) === !!off) return;
+    Store.mutate('settings', s => { s.remind = Object.assign({}, s.remind); const o = Object.assign({}, s.remind.off); if(off) o[key] = 1; else delete o[key]; s.remind.off = o; });
+  }
+};
+function bellBtn(){
+  const p = Rem.pausedUntil();
+  return `<button class="themebtn bellbtn ${p ? 'off' : ''}" data-act="rem-menu" aria-label="일정 알림 ${p ? '꺼짐' : '켜짐'}" title="${p ? '알림 꺼짐 · ' + esc(Rem.untilLabel()) + ' (눌러서 다시 켜기)' : '일정 알림 켜짐 (눌러서 끄기·설정)'}"><svg viewBox="0 0 24 24">${p ? BELL_OFF : BELL}</svg>${p ? `<span class="bl">알림 꺼짐 · ${esc(Rem.untilLabel())}</span>` : ''}</button>`;
+}
+function openRemModal(){
+  const p = Rem.pausedUntil(), t = today(), now = Date.now();
+  const perm = !('Notification' in window) ? 'none' : Notification.permission;
+  const up = Rem.events(t, addDays(t,1)).filter(x => x.at > now).slice(0, 10);
+  const permLine = perm === 'granted' ? '<div class="hint">✅ 허용됨 · 다른 창을 보고 있어도 윈도우 알림으로 떠요.</div>'
+    : perm === 'denied' ? '<div class="hint">⛔ 이 브라우저에서 알림이 차단돼 있어요. 주소창 왼쪽 자물쇠 → 알림 → <b>허용</b>으로 바꿔 주세요. (앱 화면 안 알림은 그대로 떠요)</div>'
+    : perm === 'none' ? '<div class="hint">이 화면에서는 컴퓨터 알림을 쓸 수 없어요. 앱 화면 안 알림만 떠요.</div>'
+    : '<button class="btn" style="width:100%" data-act="rem-perm">컴퓨터 알림 허용하기</button><div class="hint" style="margin-top:6px">허용하면 다른 프로그램을 쓰고 있어도 화면 오른쪽 아래에 알림이 떠요.</div>';
+  openModal(`<h3>🔔 일정 알림</h3>
+    <div class="hint">시작 시간이 있는 일정마다 <b>전날 같은 시간 · 1시간 전 · 10분 전</b> 세 번 알려드려요.</div>
+    <div class="remstat ${p ? 'off' : ''}">${p ? `🔕 알림이 꺼져 있어요 · <b>${esc(Rem.untilLabel())}</b>` : '🔔 알림이 켜져 있어요'}</div>
+    ${p ? '<button class="btn pri" style="width:100%" data-act="rem-resume">알림 다시 켜기</button>' : ''}
+    <label class="f">${p ? '끄는 시간 바꾸기' : '알림 전체 끄기 (워크숍·회의 중)'}</label>
+    <div class="seg remseg"><button data-act="rem-pause" data-m="60">1시간</button><button data-act="rem-pause" data-m="180">3시간</button><button data-act="rem-pause" data-m="today">오늘 하루</button><button data-act="rem-pause" data-m="forever">켤 때까지</button></div>
+    <label class="f">컴퓨터 알림</label>${permLine}
+    <label class="f">다가오는 일정 (오늘·내일) · 체크를 끄면 그 일정만 알림이 오지 않아요</label>
+    ${up.length ? up.map(x => `<label class="toggle remrow"><input type="checkbox" class="cb" data-act="rem-toggle" data-key="${esc(x.key)}" ${Rem.isOff(x.key) ? '' : 'checked'}><span><b class="num">${x.date === t ? '오늘' : '내일'} ${esc(x.time)}</b> ${esc(x.title)}${x.local ? '' : ' <span class="gbadge">구글</span>'}</span></label>`).join('') : '<div class="empty">오늘·내일 시작 시간이 있는 일정이 없어요.</div>'}
+    <div class="hint" style="margin-top:12px">알림은 일잘러 노트가 열려 있을 때(다른 탭·최소화 상태 포함) 떠요. 종일 일정은 알리지 않아요.</div>
+    <div class="actions"><button class="btn ghost" data-act="rem-test">테스트 알림</button><span class="grow"></span><button class="btn pri" data-act="modal-close">닫기</button></div>`);
+}
+
 /* ---------- getters ---------- */
 const settings = () => Object.assign(defaultSettings(), Store.get('settings') || {});
 const dayDoc = date => Store.get('day-' + date) || {};
@@ -1089,7 +1222,7 @@ function topbar(){
   const S = settings(), p = probation(), h = new Date().getHours();
   const greet = h < 11 ? '좋은 아침이에요' : h < 18 ? '오늘도 한 걸음씩' : '오늘도 수고했어요';
   return `<div class="topbar"><img class="mlogo" src="${LOGO}" alt="REALWORK"><span class="sync msync" id="msync"><i></i><span></span></span><div class="hello">${esc(greet)}, <b>${esc(S.name || '')}님</b>${p && p.dPlus > 0 ? ` · 입사 <b class="num">D+${p.dPlus}</b>` : ''}</div>
-  <div class="topright">${p && S.probationMonths > 0 ? `<div class="prob"><span>수습 ${p.dMinus > 0 ? `종료까지 <b class="num" style="color:var(--ink)">D-${p.dMinus}</b>` : '완료'}</span><span class="bar"><i style="width:${p.pct.toFixed(1)}%"></i></span><span class="num">${p.pct.toFixed(0)}%</span></div>` : ''}${themeBtn()}</div></div>`;
+  <div class="topright">${p && S.probationMonths > 0 ? `<div class="prob"><span>수습 ${p.dMinus > 0 ? `종료까지 <b class="num" style="color:var(--ink)">D-${p.dMinus}</b>` : '완료'}</span><span class="bar"><i style="width:${p.pct.toFixed(1)}%"></i></span><span class="num">${p.pct.toFixed(0)}%</span></div>` : ''}${bellBtn()}${themeBtn()}</div></div>`;
 }
 const SUN = '<circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/>';
 const MOON = '<path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/>';
@@ -1266,6 +1399,7 @@ function openGcalModal(date, gid){
     <div class="hint num">${dayLabel(date)} · ${g.time ? esc(g.time) + (g.end ? '–' + esc(g.end) : '') : '종일'}</div>
     ${g.location ? `<label class="f">장소</label><div>${esc(g.location)}</div>` : ''}
     ${desc ? `<label class="f">설명</label><div style="white-space:pre-wrap;font-size:14px">${esc(desc.slice(0,2000))}</div>` : ''}
+    ${g.time ? `<label class="toggle" style="margin-top:12px"><input type="checkbox" class="cb" data-act="rem-toggle" data-key="g:${esc(g.gid)}" ${Rem.isOff('g:' + g.gid) ? '' : 'checked'}><span>🔔 알림 받기 <span class="hint">(전날 같은 시간 · 1시간 전 · 10분 전)</span></span></label>` : ''}
     <div class="hint" style="margin-top:14px">구글 캘린더에 있는 일정이에요. 수정은 구글 캘린더에서 해 주세요.</div>
     <button class="btn" style="margin-top:12px;width:100%" data-act="mtg-from-event" data-date="${date}" data-id="${esc(g.gid)}" data-g="1">📝 ${meetings().some(m => m.eventRef === 'g:' + g.gid) ? '이 일정의 회의록 열기' : '이 일정으로 회의록 쓰기'}</button>
     <div class="actions">${g.link ? `<a class="btn" href="${esc(g.link)}" target="_blank" rel="noopener">구글 캘린더에서 열기</a>` : ''}<span class="grow"></span><button class="btn pri" data-act="modal-close">닫기</button></div>`);
@@ -1698,6 +1832,7 @@ function openEventModal(date, evId){
     <label class="f">분류</label><select name="cat">${Object.keys(EV_CATS).map(c => `<option ${ev.cat===c?'selected':''}>${c}</option>`).join('')}</select>
     <label class="f">메모</label><textarea name="memo" placeholder="장소, 준비물, 참석자 등">${esc(ev.memo||'')}</textarea>
     ${GCal.canPush() ? `<label class="toggle"><input type="checkbox" class="cb" name="push" ${(ev.gid || ev.gsync === 'failed' || (!evId && (settings().gcal||{}).push !== false)) ? 'checked' : ''}><span>구글 캘린더에도 저장${ev.gid ? ' <span class="hint">(연결됨 · 끄면 구글에서 삭제돼요)</span>' : ''}</span></label>` : ''}
+    <label class="toggle"><input type="checkbox" class="cb" name="remind" ${evId && Rem.isOff('l:' + evId) ? '' : 'checked'}><span>🔔 알림 받기 <span class="hint">(전날 같은 시간 · 1시간 전 · 10분 전 · 시작 시간이 있을 때)</span></span></label>
     ${evId ? `<button type="button" class="btn" style="margin-top:12px;width:100%" data-act="mtg-from-event" data-date="${date}" data-id="${esc(evId)}">📝 ${meetings().some(m => m.eventRef === 'l:' + evId) ? '이 일정의 회의록 열기' : '이 일정으로 회의록 쓰기'}</button>` : ''}
     <div class="actions">${evId ? `<button type="button" class="btn ghost" style="color:var(--red)" data-act="event-del" data-date="${date}" data-id="${esc(evId)}">삭제</button>` : ''}<span class="grow"></span>
       <button type="button" class="btn ghost" data-act="modal-close">취소</button><button class="btn pri">저장</button></div>
@@ -2148,6 +2283,15 @@ const actions = {
     render(); toast(`${ids.length}개 기록을 불러왔어요.`);
   },
   'modal-close': () => closeModal(),
+  'rem-menu': () => openRemModal(),
+  'rem-pause': el => { Rem.pause(el.dataset.m); closeModal(); render(); toast(`알림을 껐어요 · ${Rem.untilLabel()}`, () => { Rem.resume(); render(); toast('알림을 다시 켰어요'); }); },
+  'rem-resume': () => { Rem.resume(); closeModal(); render(); toast('알림을 다시 켰어요'); },
+  'rem-toggle': el => { Rem.setOff(el.dataset.key, !el.checked); toast(el.checked ? '이 일정 알림을 켰어요' : '이 일정 알림을 껐어요'); },
+  'rem-perm': () => { try{ Promise.resolve(Notification.requestPermission()).then(r => { if(r === 'granted') toast('컴퓨터 알림을 허용했어요'); openRemModal(); }); }catch(e){ toast('이 화면에서는 알림 허용을 요청할 수 없어요'); } },
+  'rem-test': () => { Rem.notify({ key:'', date:today(), time:nowHM(), end:'', title:'테스트 알림', sub:'일정 알림이 이렇게 떠요', at:Date.now() + 10*60e3 }, REM_STAGES[2], 'test|' + Date.now()); },
+  'rem-dismiss': el => Rem.dismiss(el.dataset.id),
+  'rem-open': el => { Rem.dismiss(el.dataset.id); Rem.open(el.dataset.date); },
+  'rem-mute': el => { const k = el.dataset.key; Rem.setOff(k, true); Rem.dismiss(el.dataset.id); toast('이 일정 알림을 껐어요', () => { Rem.setOff(k, false); toast('이 일정 알림을 다시 켰어요'); }); },
   'modal-bg': (el, e) => { if(e.target === el) closeModal(); },
   'undo': () => { if(undoFn){ const f = undoFn; undoFn = null; document.getElementById('toastRoot').innerHTML = ''; f(); } }
 };
@@ -2193,6 +2337,8 @@ const forms = {
     const save = (dt, patch) => mutDay(dt, d => { d.events = d.events || []; const i = d.events.findIndex(e => e.id === id); const cur = Object.assign({}, i > -1 ? d.events[i] : ev, patch || {}); if(i > -1) d.events[i] = cur; else d.events.push(cur); });
     if(f.dataset.id && orig !== date) mutDay(orig, d => { d.events = (d.events||[]).filter(e => e.id !== id); });
     save(date, ev);
+    Rem.setOff('l:' + id, !(f.remind && f.remind.checked));
+    if(ev.time && (!prev || prev.time !== ev.time || orig !== date)) Rem.markPast('l:' + id, date, ev.time);
     closeModal(); render();
     if(!GCal.mcp || (!push && !ev.gid)){ toast(f.dataset.id ? '일정을 수정했어요' : `${shortLabel(date)} 일정을 추가했어요`); return; }
     const cal = GCal.cal();
@@ -2396,6 +2542,9 @@ Wheel.prep();
 Store.init().then(() => GCal.init());
 if(!window.claude && 'serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 setInterval(() => { if(document.visibilityState === 'visible' && GCal.enabled()) softRender(); }, 5*60e3);
+setInterval(() => { try{ Rem.tick(); }catch(e){ console.warn('[rem]', e); } }, 20e3);
+setTimeout(() => { try{ Rem.tick(); }catch(e){} }, 3000);
+document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') try{ Rem.tick(); }catch(e){} });
 })();
 </script>
 </body>
