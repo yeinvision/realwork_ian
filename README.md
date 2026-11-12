@@ -22,4 +22,5 @@
 
 - 로그인: Supabase Auth (이메일 로그인 링크)
 - 저장: Supabase `public.notes` 테이블 (본인 기록만 읽고 쓰도록 RLS로 잠금)
+- 일정 알림(웹 푸시): `push_subs`(알림 받을 기기) · `push_sent`(보낸 알림 기록) 테이블, `supabase/functions/push-reminders` 함수를 cron(`push-reminders`, 1분마다)이 불러요. VAPID 비밀 키와 `CRON_SECRET`은 Supabase secrets에만 있어요. 함수 수정 후 배포: `npx supabase functions deploy push-reminders --remote=zzkugatuxqqzxvbejysz --no-verify-jwt --use-api`
 - `index.html` 안의 publishable key는 브라우저에 공개돼도 되는 키예요. secret key는 절대 이 저장소에 넣지 마세요.

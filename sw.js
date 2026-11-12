@@ -8,6 +8,11 @@ self.addEventListener('fetch', e => {
   if (e.request.method !== 'GET' || url.origin !== location.origin) return; // Supabase·구글 요청은 건드리지 않아요
   e.respondWith(fetch(e.request).then(res => { const copy = res.clone(); caches.open(CACHE).then(c => c.put(e.request, copy)); return res; }).catch(() => caches.match(e.request).then(r => r || caches.match('./index.html'))));
 });
+// 서버(Supabase push-reminders)가 보낸 일정 알림: 앱을 닫아 둬도 떠요
+self.addEventListener('push', e => {
+  let d = {}; try { d = e.data ? e.data.json() : {}; } catch (_) { d = { title: e.data ? e.data.text() : '일정 알림' }; }
+  e.waitUntil(self.registration.showNotification(d.title || '🔔 일정 알림', { body: d.body || '', tag: d.tag, icon: 'icon-192.png', badge: 'icon-192.png', requireInteraction: !!d.sticky, renotify: true, data: { date: d.date } }));
+});
 // 일정 알림을 누르면 열려 있는 일잘러 노트 창으로 돌아가요
 self.addEventListener('notificationclick', e => {
   e.notification.close();

@@ -984,6 +984,32 @@ function gcalLine(){
 /* ---------- 일정 알림: 전날 같은 시간 · 1시간 전 · 10분 전 ----------
    앱이 열려 있는 동안(다른 탭·최소화 포함) 20초마다 오늘·내일 일정을 살펴요.
    끄기: settings.remind.until(일시정지 끝 시각 ISO 또는 'forever'), settings.remind.off['l:id'|'g:gid'](일정별) */
+/* 웹 푸시: 앱을 닫아도 서버(Supabase push-reminders 함수)가 알림을 보내요. 공개 키만 여기 두고, 비밀 키는 Supabase secrets에만 있어요. */
+const VAPID_PUB = 'BNt3db-9MLQn3AiSdT8Sl4nvTd46Ad95m5-orx0FJoLY7Sxo5nIdl13D8V8XXeNVE5Mb1ODCOVboGkMroKSTAko';
+const Push = {
+  supported(){ return !window.claude && !!SB_USER && 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window && location.protocol === 'https:'; },
+  on(){ try{ return !!localStorage.getItem('ijn-push'); }catch(e){ return false; } },
+  key(){ const b = VAPID_PUB.replace(/-/g,'+').replace(/_/g,'/'), raw = atob(b + '='.repeat((4 - b.length % 4) % 4)); return Uint8Array.from(raw, c => c.charCodeAt(0)); },
+  async enable(){
+    const perm = await Notification.requestPermission();
+    if(perm !== 'granted') throw new Error('perm');
+    const reg = await navigator.serviceWorker.ready;
+    const sub = (await reg.pushManager.getSubscription()) || await reg.pushManager.subscribe({ userVisibleOnly:true, applicationServerKey:this.key() });
+    const j = sub.toJSON();
+    const { error } = await SB.from('push_subs').upsert({ user_id:SB_USER.id, endpoint:j.endpoint, p256dh:j.keys.p256dh, auth:j.keys.auth, tz_offset:-new Date().getTimezoneOffset(), ua:navigator.userAgent.slice(0,200) }, { onConflict:'endpoint' });
+    if(error) throw error;
+    try{ localStorage.setItem('ijn-push', j.endpoint); }catch(e){}
+  },
+  async disable(){
+    let ep = ''; try{ ep = localStorage.getItem('ijn-push') || ''; localStorage.removeItem('ijn-push'); }catch(e){}
+    try{ const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription(); if(sub){ ep = ep || sub.endpoint; await sub.unsubscribe(); } }catch(e){}
+    if(ep && SB) await SB.from('push_subs').delete().eq('endpoint', ep);
+  },
+  async check(){   // 브라우저가 구독을 지웠으면 표시도 정리해요
+    if(!this.on() || !('serviceWorker' in navigator)) return;
+    try{ const reg = await navigator.serviceWorker.getRegistration(); const sub = reg && await reg.pushManager.getSubscription(); if(!sub || Notification.permission !== 'granted') localStorage.removeItem('ijn-push'); }catch(e){}
+  }
+};
 const REM_STAGES = [ { k:'day', min:1440, grace:180, name:'전날' }, { k:'h1', min:60, grace:20, name:'1시간 전' }, { k:'m10', min:10, grace:10, name:'10분 전' } ];
 const BELL = '<path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>';
 const BELL_OFF = BELL + '<path d="M3 3l18 18"/>';
@@ -1040,7 +1066,7 @@ const Rem = {
     const body = `${x.date === today() ? '오늘' : '내일'} ${x.time}${x.end ? '–' + x.end : ''}${x.sub ? ' · ' + x.sub : ''}`;
     this.shown = this.shown.filter(s => s.id !== id).concat([{ id, key:x.key, date:x.date, head, body, st:st.name }]).slice(-4);
     this.paint();
-    this.system(head, body, id, x.date, st.k !== 'day');
+    if(!(Push.on() && x.key && x.key.startsWith('l:'))) this.system(head, body, id, x.date, st.k !== 'day');   // 푸시를 받는 기기는 서버가 보내요 (중복 방지)
   },
   system(head, body, id, date, sticky){
     if(!('Notification' in window) || Notification.permission !== 'granted') return;
@@ -1088,7 +1114,10 @@ function openRemModal(){
     ${p ? '<button class="btn pri" style="width:100%" data-act="rem-resume">알림 다시 켜기</button>' : ''}
     <label class="f">${p ? '끄는 시간 바꾸기' : '알림 전체 끄기 (워크숍·회의 중)'}</label>
     <div class="seg remseg"><button data-act="rem-pause" data-m="60">1시간</button><button data-act="rem-pause" data-m="180">3시간</button><button data-act="rem-pause" data-m="today">오늘 하루</button><button data-act="rem-pause" data-m="forever">켤 때까지</button></div>
-    <label class="f">컴퓨터 알림</label>${permLine}
+    ${Push.supported() ? `<label class="f">앱을 닫아도 알림 받기 (휴대폰·PC)</label>${Push.on()
+      ? '<div class="row" style="justify-content:space-between"><span class="hint">✅ 이 기기는 앱을 닫아도 알림을 받아요.</span><button class="btn sm ghost" data-act="push-off">이 기기 해제</button></div>'
+      : '<button class="btn pri" style="width:100%" data-act="push-on">이 기기에서 알림 받기</button><div class="hint" style="margin-top:6px">휴대폰에서는 홈 화면에 추가한 앱에서 눌러 주세요. 일잘러 노트에 적은 일정이 대상이에요(구글 캘린더 일정은 앱이 열려 있을 때만).</div>'}` : ''}
+    <label class="f">컴퓨터 알림 (앱이 열려 있을 때)</label>${permLine}
     <label class="f">다가오는 일정 (오늘·내일) · 체크를 끄면 그 일정만 알림이 오지 않아요</label>
     ${up.length ? up.map(x => `<label class="toggle remrow"><input type="checkbox" class="cb" data-act="rem-toggle" data-key="${esc(x.key)}" ${Rem.isOff(x.key) ? '' : 'checked'}><span><b class="num">${x.date === t ? '오늘' : '내일'} ${esc(x.time)}</b> ${esc(x.title)}${x.local ? '' : ' <span class="gbadge">구글</span>'}</span></label>`).join('') : '<div class="empty">오늘·내일 시작 시간이 있는 일정이 없어요.</div>'}
     <div class="hint" style="margin-top:12px">알림은 일잘러 노트가 열려 있을 때(다른 탭·최소화 상태 포함) 떠요. 종일 일정은 알리지 않아요.</div>
@@ -2284,6 +2313,11 @@ const actions = {
   },
   'modal-close': () => closeModal(),
   'rem-menu': () => openRemModal(),
+  'push-on': async el => { el.disabled = true; el.textContent = '연결 중…';
+    try{ await Push.enable(); toast('이 기기에서 앱을 닫아도 알림을 받아요'); }
+    catch(e){ toast(e && e.message === 'perm' ? '알림이 허용되지 않았어요. 브라우저 설정에서 알림을 허용해 주세요' : '알림 연결에 실패했어요. 잠시 후 다시 시도해 주세요'); console.warn('[push]', e); }
+    openRemModal(); },
+  'push-off': async () => { await Push.disable(); toast('이 기기 알림을 해제했어요'); openRemModal(); },
   'rem-pause': el => { Rem.pause(el.dataset.m); closeModal(); render(); toast(`알림을 껐어요 · ${Rem.untilLabel()}`, () => { Rem.resume(); render(); toast('알림을 다시 켰어요'); }); },
   'rem-resume': () => { Rem.resume(); closeModal(); render(); toast('알림을 다시 켰어요'); },
   'rem-toggle': el => { Rem.setOff(el.dataset.key, !el.checked); toast(el.checked ? '이 일정 알림을 켰어요' : '이 일정 알림을 껐어요'); },
@@ -2331,7 +2365,8 @@ const forms = {
   'event-save': async f => {
     const orig = f.dataset.orig, id = f.dataset.id || uid(), date = f.date.value || orig;
     const prev = f.dataset.id ? (dayDoc(orig).events || []).find(e => e.id === id) : null;
-    const ev = { id, title:f.title.value.trim(), time:f.time.value, end:f.end.value, cat:f.cat.value, memo:f.memo.value, gid:(prev && prev.gid) || null, gsync:(prev && prev.gsync) || null };
+    const rmk = (!prev || prev.time !== f.time.value || orig !== date) ? new Date().toISOString() : ((prev && prev.rmk) || null);   // 서버 알림: 이 시각 전에 지난 단계는 보내지 않아요
+    const ev = { id, rmk, title:f.title.value.trim(), time:f.time.value, end:f.end.value, cat:f.cat.value, memo:f.memo.value, gid:(prev && prev.gid) || null, gsync:(prev && prev.gsync) || null };
     if(!ev.title) return;
     const push = !!(f.push && f.push.checked);
     const save = (dt, patch) => mutDay(dt, d => { d.events = d.events || []; const i = d.events.findIndex(e => e.id === id); const cur = Object.assign({}, i > -1 ? d.events[i] : ev, patch || {}); if(i > -1) d.events[i] = cur; else d.events.push(cur); });
@@ -2543,7 +2578,7 @@ Store.init().then(() => GCal.init());
 if(!window.claude && 'serviceWorker' in navigator && location.protocol === 'https:') navigator.serviceWorker.register('sw.js').catch(() => {});
 setInterval(() => { if(document.visibilityState === 'visible' && GCal.enabled()) softRender(); }, 5*60e3);
 setInterval(() => { try{ Rem.tick(); }catch(e){ console.warn('[rem]', e); } }, 20e3);
-setTimeout(() => { try{ Rem.tick(); }catch(e){} }, 3000);
+setTimeout(() => { try{ Rem.tick(); }catch(e){} Push.check(); }, 3000);
 document.addEventListener('visibilitychange', () => { if(document.visibilityState === 'visible') try{ Rem.tick(); }catch(e){} });
 })();
 </script>
